@@ -33,7 +33,8 @@ Commit subjects are short and imperative.
 
 ## Release
 
-1. Bump `__version__` in `postbag.py` and add a `CHANGELOG.md` entry.
+1. Bump `__version__` in `postbag.py`, add a `CHANGELOG.md` entry, and
+   move the tag-pinned links in `README.md` to the new tag.
 2. CI green on `main`.
 3. `git tag v<version> && git push origin v<version>`. The release
    workflow builds the wheel and sdist, checks them, publishes a GitHub

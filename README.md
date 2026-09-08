@@ -8,11 +8,11 @@ counts against a human-set letter budget.
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
 
-![postbag demo: both sessions join, you open an exchange of four letters, Claude asks Codex for a review, Codex answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/main/docs/assets/demo.gif)
+![postbag demo: both sessions join, you open an exchange of four letters, Claude asks Codex for a review, Codex answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.0.2/docs/assets/demo.gif)
 
 *Real commands, real output, fake doors. The recording uses a temporary
 ledger, a throwaway socket and a stub `codex`, so no session or token is
-shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/main/docs/demo.tape).*
+shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.0.2/docs/demo.tape).*
 
 Use it to have one agent review the other's diff, to split a task between
 them and agree the interface by letter, or to get a second opinion without
@@ -27,7 +27,7 @@ pipx install postbag
 postbag --version
 ```
 
-Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.0.1`.
+Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.0.2`.
 
 postbag needs Claude Code's per-session messaging socket and the `queue`
 command [Codex added in 0.149](https://github.com/openai/codex/releases/tag/rust-v0.149.0).
@@ -75,7 +75,7 @@ a file lock, so two letters sent at once get distinct numbers and one
 budget. The ledger, `~/.postbag/ledger.jsonl`, is the only state, and the
 default is shared across projects. Set the same `POSTBAG_LEDGER` in both
 sessions and your terminal for a separate exchange. No daemon, no polling, no hooks, no server, no config file.
-[CONCEPT.md](https://github.com/parasxos/postbag/blob/main/CONCEPT.md) is the whole specification in a page.
+[CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.0.2/CONCEPT.md) is the whole specification in a page.
 
 ## Security and limits
 
@@ -99,7 +99,7 @@ sessions and your terminal for a separate exchange. No daemon, no polling, no ho
 
 postbag is a small bridge for exactly two existing sessions. Tools that
 do more, and what they do, are listed in
-[docs/readme-research.md](https://github.com/parasxos/postbag/blob/main/docs/readme-research.md).
+[docs/readme-research.md](https://github.com/parasxos/postbag/blob/v1.0.2/docs/readme-research.md).
 
-[Concept](https://github.com/parasxos/postbag/blob/main/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/main/CHANGELOG.md) ·
-[Contributing](https://github.com/parasxos/postbag/blob/main/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/main/LICENSE)
+[Concept](https://github.com/parasxos/postbag/blob/v1.0.2/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.0.2/CHANGELOG.md) ·
+[Contributing](https://github.com/parasxos/postbag/blob/v1.0.2/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.0.2/LICENSE)
