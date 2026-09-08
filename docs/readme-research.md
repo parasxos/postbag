@@ -38,19 +38,26 @@ end-to-end compatibility remains a separate, explicitly qualified fact.
 ## Neighbours on one machine
 
 Checked 8 September 2026 on each project's README. Star counts from the
-GitHub API that day.
+GitHub API that day. Each row describes what the project documents about
+itself, not what it lacks.
 
-| Tool | Stars | What it is | How it differs from postbag |
-|---|---|---|---|
-| [hcom](https://github.com/aannoo/hcom) | 484 | One Rust binary; agents message, watch and spawn each other through vendor hooks and a local SQLite file. About eleven agents supported. | No daemon, like postbag, but N agents, delivery through hooks the tool installs rather than the vendor's own socket or queue, and collision detection instead of a budget. |
-| [AgentBridge](https://github.com/raysonmeng/agent-bridge) | 331 | Claude Code and Codex as live peers over MCP, with a background daemon proxying the Codex app server over WebSocket. | Daemon and local ports required. Bounds the chat by message filtering and loop detection, not a human budget. |
-| [Codex Bridge](https://github.com/abhishekgahlot2/codex-claude-bridge) | 56 | The two agents share a markdown chat file, delivered by a Claude Code channel plugin and a Codex stop hook. | Plugins on both sides and a research-preview flag. The agents end the conversation with a marker, so they bound it, not the human. |
-| [MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail) | 2132 | Gmail-like inboxes, threads and advisory file leases over an MCP server with Git and SQLite behind it. | Server process, N agents, inbox polling instead of a wake-up, no budget. |
-| [ClawTeam](https://github.com/HKUDS/ClawTeam) | 5530 | A leader agent spawns workers in git worktrees and coordinates through JSON inboxes or ZeroMQ. | Leader and workers, spawned by the tool, bounded by a task graph. |
-| [Claude Squad](https://github.com/smtg-ai/claude-squad) | 8448 | A tmux TUI that runs several agents side by side in separate worktrees. | Isolation and switching only. The human relays. |
+| Tool | Stars | What it documents |
+|---|---|---|
+| [hcom](https://github.com/aannoo/hcom) | 484 | One Rust binary. Agents message, watch and spawn each other through vendor hooks and a local SQLite file, idle agents are woken immediately, collision notifications are included. About eleven agent CLIs supported. |
+| [AgentBridge](https://github.com/raysonmeng/agent-bridge) | 331 | Claude Code and Codex as live peers over MCP with a background daemon proxying the Codex app server. Documents message tagging, loop prevention, and subscription-quota coordination with slowdown and resume. |
+| [Codex Bridge](https://github.com/abhishekgahlot2/codex-claude-bridge) | 56 | The two agents share a markdown chat file, delivered by a Claude Code channel plugin and a Codex stop hook with cursors. Conversations end on a done marker or at a cap of 40 messages. |
+| [MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail) | 2132 | Gmail-like identities, inboxes, threads and advisory file leases over an MCP server with Git and SQLite behind it, plus optional post-tool inbox reminder hooks and a Codex notify handler. |
+| [ClawTeam](https://github.com/HKUDS/ClawTeam) | 5530 | A leader agent spawns workers in git worktrees and coordinates through JSON inboxes or ZeroMQ, with documented task dependencies and lifecycle controls. |
+| [Claude Squad](https://github.com/smtg-ai/claude-squad) | 8448 | A tmux TUI that runs several agents side by side in separate worktrees, with background execution and change review. |
 
-The vendor primitives postbag uses: Claude Code 2.1.224 (2026-08-07) added
-cross-session messaging over a per-session socket, and Codex CLI 0.149
-(2026-08-20) added `codex queue`. Nothing in the table combines a vendor
-native wake-up on both sides, one append-only ledger as the only state, and
-a budget the agents cannot extend. That is the whole of postbag's claim.
+Feature history worth knowing: Codex CLI 0.149 (2026-08-20) added
+`codex queue`, which postbag uses. Claude Code 2.1.224 (2026-08-07) added
+public cross-session `SendMessage` and `ListAgents`; postbag uses the
+per-session socket and token that Claude Code exports to its commands, an
+interface described by its environment variables rather than by a release
+note, which is why the README states capability checks and tested versions
+instead of a minimum.
+
+postbag's scope, stated precisely: a fixed pair of existing sessions,
+delivery through each vendor's own mechanism, one append-only ledger as the
+only state, and a letter budget set by a human outside both sessions.

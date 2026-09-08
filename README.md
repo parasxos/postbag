@@ -27,10 +27,11 @@ pipx install postbag
 postbag --version
 ```
 
-Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.0.0`.
+Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.0.1`.
 
-postbag needs the messaging socket [Claude Code added in 2.1.224](https://github.com/anthropics/claude-code/releases/tag/v2.1.224)
-and the `queue` command [Codex added in 0.149](https://github.com/openai/codex/releases/tag/rust-v0.149.0). Verified end to end on macOS with
+postbag needs Claude Code's per-session messaging socket and the `queue`
+command [Codex added in 0.149](https://github.com/openai/codex/releases/tag/rust-v0.149.0).
+Verified end to end on macOS with
 Claude Code 2.1.263 and Codex 0.153.4 from the ChatGPT desktop app. Linux
 passes CI but the live exchange is not verified there. Windows is not
 supported. The Claude session must export `CLAUDE_CODE_MESSAGING_SOCKET`
@@ -96,15 +97,9 @@ sessions and your terminal for a separate exchange. No daemon, no polling, no ho
   are no acknowledgements and no retries; check the recipient before sending
   again.
 
-## Neighbours
-
-postbag is a small bridge for exactly two existing sessions. If you want
-more agents, channels or a daemon, look at
-[hcom](https://github.com/aannoo/hcom),
-[AgentBridge](https://github.com/raysonmeng/agent-bridge),
-[Codex Bridge](https://github.com/abhishekgahlot2/codex-claude-bridge) or
-[MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail).
-Notes on each are in [docs/readme-research.md](https://github.com/parasxos/postbag/blob/main/docs/readme-research.md).
+postbag is a small bridge for exactly two existing sessions. Tools that
+do more, and what they do, are listed in
+[docs/readme-research.md](https://github.com/parasxos/postbag/blob/main/docs/readme-research.md).
 
 [Concept](https://github.com/parasxos/postbag/blob/main/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/blob/main/SECURITY.md) · [Changelog](https://github.com/parasxos/postbag/blob/main/CHANGELOG.md) ·
 [Contributing](https://github.com/parasxos/postbag/blob/main/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/main/LICENSE)
