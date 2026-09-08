@@ -74,6 +74,7 @@ def test_buffered_append_failure_preserves_submission_warning_after_close(tmp_pa
         del os.environ['CODEX_SESSION_ID']
         os.environ['CLAUDE_CODE_MESSAGING_SOCKET'] = '/tmp/unused-postbag-test.sock'
         os.environ['CLAUDE_CODE_MESSAGING_TOKEN'] = 'fake-token-not-a-credential'
+        bag['join']('claude')
         bag['KNOCK']['codex'] = lambda door, text: print('FAKE_DOOR_SUBMITTED', flush=True)
 
         # Only this child gets the limit. The send buffers data, then both flush

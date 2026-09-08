@@ -76,10 +76,18 @@ def assert_ok(result):
     assert result.returncode == 0, result.stderr
 
 
-def prepare_exchange(cli, limit):
-    assert_ok(cli("join", "claude", peer="claude"))
-    assert_ok(cli("join", "codex", peer="codex"))
+def prepare_exchange(cli, limit, *, same_vendor=False):
+    if same_vendor:
+        sender, recipient = "codex", "@bob"
+        sender_extra = {"CODEX_SESSION_ID": "sender-thread-not-a-live-session"}
+        assert_ok(cli("join", "codex", "ada", peer=sender, extra=sender_extra))
+        assert_ok(cli("join", "codex", "bob", peer="codex"))
+    else:
+        sender, recipient, sender_extra = "claude", "codex", {}
+        assert_ok(cli("join", "claude", peer="claude"))
+        assert_ok(cli("join", "codex", peer="codex"))
     assert_ok(cli("open", "--limit", str(limit)))
+    return sender, recipient, sender_extra
 
 
 def rows(path):
@@ -171,7 +179,8 @@ def test_join_keeps_ledger_private_even_with_permissive_umask(cli, preexisting):
         assert stat.S_IMODE(cli.ledger.parent.stat().st_mode) == 0o700
 
 
-def test_claude_door_sends_auth_and_user_records_over_a_real_socket(cli):
+@pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
+def test_claude_door_sends_auth_and_user_records_over_a_real_socket(cli, same_vendor):
     # Darwin limits Unix socket names to 104 bytes; pytest paths can exceed it.
     with tempfile.TemporaryDirectory(prefix="postbag-wire-", dir="/tmp") as temp:
         socket_path = str(Path(temp) / "inbox.sock")
@@ -186,15 +195,19 @@ def test_claude_door_sends_auth_and_user_records_over_a_real_socket(cli):
                     with connection.makefile("rb") as stream:
                         return [json.loads(stream.readline()) for _ in range(2)]
 
+            sender = "claude" if same_vendor else "codex"
+            sender_name = "ada" if same_vendor else "codex"
+            recipient_name = "bob" if same_vendor else "claude"
             assert_ok(cli(
-                "join", "claude", peer="claude",
+                "join", "claude", recipient_name, peer="claude",
                 extra={"CLAUDE_CODE_MESSAGING_SOCKET": socket_path},
             ))
+            assert_ok(cli("join", sender, sender_name, peer=sender))
             assert_ok(cli("open", "--limit", "1"))
             body = "A real socket, a fake token.\nUnicode: café 📨"
             with ThreadPoolExecutor(max_workers=1) as pool:
                 received = pool.submit(receive)
-                result = cli("send", "claude", "-", peer="codex", input=body)
+                result = cli("send", f"@{recipient_name}", "-", peer=sender, input=body)
                 wire = received.result(timeout=6)
 
     assert_ok(result)
@@ -204,16 +217,44 @@ def test_claude_door_sends_auth_and_user_records_over_a_real_socket(cli):
     assert wire[1]["type"] == "user"
     assert wire[1]["message"]["role"] == "user"
     content = wire[1]["message"]["content"]
-    assert "do not reply" in content
+    assert content.startswith(
+        f"Letter 1 of 1 from @{sender_name} to @{recipient_name} via postbag (exchange 1).\n"
+    )
+    assert "do not send a reply" in content
     assert content.endswith(body)
     assert rows(cli.ledger)[-1]["body"] == body
 
 
-def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex):
-    prepare_exchange(cli, 2)
+def test_closed_named_claude_socket_does_not_record_or_spend_a_letter(cli):
+    with tempfile.TemporaryDirectory(prefix="postbag-closed-", dir="/tmp") as temp:
+        socket_path = str(Path(temp) / "inbox.sock")
+        with socket.socket(socket.AF_UNIX) as closed:
+            closed.bind(socket_path)
+        assert_ok(cli("join", "claude", "ada", peer="claude"))
+        assert_ok(cli(
+            "join", "claude", "bob", peer="claude",
+            extra={"CLAUDE_CODE_MESSAGING_SOCKET": socket_path},
+        ))
+        assert_ok(cli("open", "--limit", "1"))
+        before = cli.ledger.read_bytes()
+
+        result = cli("send", "@bob", "cannot be submitted", peer="claude")
+
+    assert result.returncode != 0
+    assert "@bob" in result.stderr
+    assert "door did not answer" in result.stderr
+    assert "postbag join claude bob" in result.stderr
+    assert "stop and ask the human" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert cli.ledger.read_bytes() == before
+
+
+@pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
+def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex, same_vendor):
+    sender, recipient, sender_extra = prepare_exchange(cli, 2, same_vendor=same_vendor)
     body = "quotes: ' and \"; $(never-run)\nsecond line"
 
-    assert_ok(cli("send", "codex", body, peer="claude", extra=fake_codex))
+    assert_ok(cli("send", recipient, body, peer=sender, extra={**fake_codex, **sender_extra}))
 
     calls = rows(Path(fake_codex["POSTBAG_TEST_CAPTURE"]))
     assert len(calls) == 1
@@ -221,17 +262,24 @@ def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex):
         "queue", "--thread", SESSION_VARS["codex"]["CODEX_SESSION_ID"], "--message",
     ]
     assert len(calls[0]) == 5
-    assert calls[0][4].endswith(body)
+    content = calls[0][4]
+    sender_name, recipient_name = ("ada", "bob") if same_vendor else ("claude", "codex")
+    assert content.startswith(
+        f"Letter 1 of 2 from @{sender_name} to @{recipient_name} via postbag (exchange 1).\n"
+    )
+    assert f"\n\n{body}\n\nIf it needs an answer, reply with:\n" in content
+    assert f"postbag send @{sender_name} - <<'POSTBAG'" in content
     assert rows(cli.ledger)[-1]["body"] == body
 
 
-def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex):
-    prepare_exchange(cli, 1)
+@pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
+def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex, same_vendor):
+    sender, recipient, sender_extra = prepare_exchange(cli, 1, same_vendor=same_vendor)
     before = cli.ledger.read_bytes()
 
     result = cli(
-        "send", "codex", "rejected", peer="claude",
-        extra={**fake_codex, "POSTBAG_TEST_REJECT": "1"},
+        "send", recipient, "rejected", peer=sender,
+        extra={**fake_codex, **sender_extra, "POSTBAG_TEST_REJECT": "1"},
     )
 
     assert result.returncode != 0
@@ -239,19 +287,24 @@ def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex)
     assert "stop and ask the human" in result.stderr
     assert "Traceback" not in result.stderr
     assert cli.ledger.read_bytes() == before
-    assert_ok(cli("send", "codex", "accepted", peer="claude", extra=fake_codex))
+    assert_ok(cli("send", recipient, "accepted", peer=sender, extra={**fake_codex, **sender_extra}))
     assert len([r for r in rows(cli.ledger) if r["kind"] == "letter"]) == 1
 
 
-def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake_codex):
+@pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
+def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake_codex, same_vendor):
     limit = 4
-    prepare_exchange(cli, limit)
+    sender, recipient, sender_extra = prepare_exchange(cli, limit, same_vendor=same_vendor)
     processes = []
     try:
         for number in range(8):
+            # Named Codex peers send in both directions against the same budget.
+            reverse = same_vendor and number % 2
+            target = "@ada" if reverse else recipient
+            extra = {} if reverse else sender_extra
             processes.append(subprocess.Popen(
-                [sys.executable, str(SCRIPT), "send", "codex", f"body-{number}"],
-                env=cli.environment("claude", fake_codex),
+                [sys.executable, str(SCRIPT), "send", target, f"body-{number}"],
+                env=cli.environment(sender, {**fake_codex, **extra}),
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             ))
         results = [process.communicate(timeout=10) for process in processes]
@@ -273,7 +326,16 @@ def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake
     assert len({r["body"] for r in letters}) == limit
     calls = rows(Path(fake_codex["POSTBAG_TEST_CAPTURE"]))
     assert len(calls) == limit
-    assert "do not reply" in calls[-1][-1]
+    assert "do not send a reply" in calls[-1][-1]
+    for number, (letter, call) in enumerate(zip(letters, calls), 1):
+        assert call[-1].startswith(
+            f"Letter {number} of {limit} from @{letter['from']} to @{letter['to']} "
+            "via postbag (exchange 1).\n"
+        )
+        if same_vendor:
+            expected_thread = (sender_extra["CODEX_SESSION_ID"] if letter["to"] == "ada"
+                               else SESSION_VARS["codex"]["CODEX_SESSION_ID"])
+            assert call[2] == expected_thread
 
 
 def test_read_waits_for_an_exclusive_writer_to_finish_a_record(cli):

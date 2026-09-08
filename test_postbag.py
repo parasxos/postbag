@@ -67,10 +67,10 @@ def test_open_is_the_humans_verb(bag, be):
 
 
 def test_send_is_the_senders_verb(joined, be):
-    with pytest.raises(SystemExit, match="codex's verb"):
+    with pytest.raises(SystemExit, match="@claude is your own name"):
         joined.send("claude", "to myself")
     be(None)
-    with pytest.raises(SystemExit, match="claude's verb"):
+    with pytest.raises(SystemExit, match="no registered name"):
         joined.send("codex", "from a human terminal")
 
 
@@ -84,7 +84,8 @@ def test_send_needs_an_open_exchange(bag, be):
 def test_send_needs_a_joined_recipient(bag, be):
     bag.open_exchange(3)
     be("claude")
-    with pytest.raises(SystemExit, match="codex has not joined"):
+    bag.join("claude")
+    with pytest.raises(SystemExit, match="@codex is not registered"):
         bag.send("codex", "x")
 
 
@@ -93,7 +94,7 @@ def test_send_needs_text(joined):
         joined.send("codex", " \n")
 
 
-def test_sender_is_the_other_peer(joined):
+def test_sender_is_the_registered_session(joined):
     joined.send("codex", "hello")
     rec = joined.records()[-1]
     assert (rec["from"], rec["to"], rec["body"]) == ("claude", "codex", "hello")
@@ -103,9 +104,10 @@ def test_the_letter_teaches_its_reader(joined):
     joined.send("codex", "hello")
     peer, door, text = joined.KNOCKED[0]
     assert peer == "codex" and door["thread"] == "t-1"
-    assert text.startswith("Letter 4 from claude via postbag. If it needs an answer")
-    assert "postbag send claude - <<'POSTBAG'" in text and "does not occur in your reply" in text
-    assert text.endswith("Otherwise do nothing.\n\nhello")
+    assert text.startswith("Letter 1 of 3 from @claude to @codex via postbag (exchange 1).")
+    assert "postbag send @claude - <<'POSTBAG'" in text and "does not occur in your reply" in text
+    assert "\n\nhello\n\nIf it needs an answer" in text
+    assert text.endswith("Do not reply only to acknowledge.")
 
 
 def test_the_last_letter_says_do_not_reply(joined, be):
@@ -114,7 +116,7 @@ def test_the_last_letter_says_do_not_reply(joined, be):
     joined.send("claude", "2")
     be("claude")
     joined.send("codex", "3")
-    assert "last letter of the exchange; do not reply" in joined.KNOCKED[-1][2]
+    assert "last letter of this exchange; do not send a reply" in joined.KNOCKED[-1][2]
     assert "reply with" not in joined.KNOCKED[-1][2]
 
 
@@ -145,7 +147,7 @@ def test_read_prints_the_ledger_and_never_the_token(joined, capsys):
     capsys.readouterr()
     joined.read(None)
     out = capsys.readouterr().out
-    assert out.count("join") == 2 and "3 letters" in out and "claude -> codex" in out and "      line two" in out
+    assert out.count("join") == 2 and "3 letters" in out and "@claude -> @codex" in out and "      line two" in out
     assert "tok" not in out
 
 
@@ -262,7 +264,7 @@ def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypa
             yield w
 
     monkeypatch.setattr(joined, "ledger", broken)
-    with pytest.raises(SystemExit, match="was submitted to codex's door but not recorded .disk full.; do not resend"):
+    with pytest.raises(SystemExit, match="was submitted to @codex's door but not recorded .disk full.; do not resend"):
         joined.send("codex", "x")
     assert len(joined.KNOCKED) == 1
 
