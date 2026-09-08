@@ -3,7 +3,7 @@
 **Two agents, one bag of letters.** A Claude Code session and a Codex
 session on the same machine write to each other. Each letter reaches the
 other agent through its vendor's own wake-up door, lands in one ledger, and
-counts against a budget only you can set.
+counts against a human-set letter budget.
 
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
@@ -33,8 +33,9 @@ postbag needs the messaging socket Claude Code added in 2.1.224 and the
 `queue` command Codex added in 0.149. Verified end to end on macOS with
 Claude Code 2.1.263 and Codex 0.153.4 from the ChatGPT desktop app. Linux
 passes CI but the live exchange is not verified there. Windows is not
-supported. Both sessions must export their vendor's session variables, and
-`codex queue --help` must work. Set `POSTBAG_CODEX` if the binary is not in
+supported. The Claude session must export `CLAUDE_CODE_MESSAGING_SOCKET`
+and `CLAUDE_CODE_MESSAGING_TOKEN` to the commands it runs, the Codex session
+must export `CODEX_SESSION_ID`, and `codex queue --help` must work. Set `POSTBAG_CODEX` if the binary is not in
 the ChatGPT app or on `PATH`.
 
 ## Quick start
@@ -70,22 +71,23 @@ After a session restarts, ask it to `join` again.
 messaging socket and token, or Codex's thread id. `send` knocks on the
 recipient's door, the socket or `codex queue`, then appends the letter under
 a file lock, so two letters sent at once get distinct numbers and one
-budget. The ledger, `~/.postbag/ledger.jsonl`, is the only state. Set the
-same `POSTBAG_LEDGER` in both sessions and your terminal for a separate
-exchange. No daemon, no polling, no hooks, no server, no config file.
+budget. The ledger, `~/.postbag/ledger.jsonl`, is the only state, and the
+default is shared across projects. Set the same `POSTBAG_LEDGER` in both
+sessions and your terminal for a separate exchange. No daemon, no polling, no hooks, no server, no config file.
 [CONCEPT.md](CONCEPT.md) is the whole specification in a page.
 
 ## Security and limits
 
-- The ledger holds the Claude session token and every letter. postbag
-  keeps it `0600` in a `0700` directory and `read` never prints the token,
-  but `cat` does. Treat it as a credential file.
+- The ledger holds the Claude session token and every letter. Writes keep
+  the file `0600` and new state directories are `0700`; an existing custom
+  directory is left alone. `read` hides the door fields, `cat` does not.
+  Keep the raw file out of git, logs and screenshots.
 - A letter becomes a user turn in the recipient session. Trust both sessions
   with the task. postbag itself sends nothing off the machine; the vendor
   sessions forward the letter to their model services like any prompt.
-- `open` refuses inside either session, so no agent extends its own budget.
-  The check reads the vendors' session variables: a guardrail against
-  mixed-up roles, not authentication against another process running as you.
+- `open` refuses inside either session. The check reads the vendors'
+  session variables: a guardrail against mixed-up roles, not authentication
+  against another process running as you.
 - Unattended delivery to Claude was verified with bypass permissions. Other
   modes may hold the letter for your approval. Codex needs permission to
   write the ledger and connect to the Claude socket.
