@@ -245,7 +245,7 @@ def test_an_unreadable_ledger_is_a_refusal_not_a_traceback(bag, be, capsys):
     be("claude")
     bag.join("claude")
     bag.ledger_path().chmod(0)
-    with pytest.raises(SystemExit, match="cannot open the ledger .Permission denied.; stop"):
+    with pytest.raises(SystemExit, match="cannot open the ledger .*Permission denied.*; stop and ask the human"):
         bag.main(["read"])
 
 
