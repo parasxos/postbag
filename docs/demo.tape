@@ -1,9 +1,9 @@
 # vhs docs/demo.tape  (https://github.com/charmbracelet/vhs)
 Output docs/assets/demo.gif
 Set Shell bash
-Set FontSize 15
-Set Width 960
-Set Height 520
+Set FontSize 18
+Set Width 1180
+Set Height 600
 Set Padding 18
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms

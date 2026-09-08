@@ -29,11 +29,13 @@ postbag --version
 
 Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.0.0`.
 
-Verified end to end on macOS with Claude Code 2.1.263 and Codex 0.153.4
-from the ChatGPT desktop app. Linux passes CI but the live exchange is not
-verified there. Windows is not supported. Both sessions must export their
-vendor's session variables, and `codex queue --help` must work. Set
-`POSTBAG_CODEX` if the binary is not in the ChatGPT app or on `PATH`.
+postbag needs the messaging socket Claude Code added in 2.1.224 and the
+`queue` command Codex added in 0.149. Verified end to end on macOS with
+Claude Code 2.1.263 and Codex 0.153.4 from the ChatGPT desktop app. Linux
+passes CI but the live exchange is not verified there. Windows is not
+supported. Both sessions must export their vendor's session variables, and
+`codex queue --help` must work. Set `POSTBAG_CODEX` if the binary is not in
+the ChatGPT app or on `PATH`.
 
 ## Quick start
 
@@ -91,6 +93,16 @@ exchange. No daemon, no polling, no hooks, no server, no config file.
   crash between submission and recording can leave a letter in doubt. There
   are no acknowledgements and no retries; check the recipient before sending
   again.
+
+## Neighbours
+
+postbag is the smallest thing that works for exactly two sessions. If you
+want more agents, channels or a daemon, look at
+[hcom](https://github.com/aannoo/hcom),
+[AgentBridge](https://github.com/raysonmeng/agent-bridge),
+[Codex Bridge](https://github.com/abhishekgahlot2/codex-claude-bridge) or
+[MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail).
+Notes on each are in [docs/readme-research.md](docs/readme-research.md).
 
 [Concept](CONCEPT.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) ·
 [Contributing](CONTRIBUTING.md) · [MIT](LICENSE)
