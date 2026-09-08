@@ -5,7 +5,7 @@ body:
     attributes:
       value: |
         Do not attach the raw ledger. It contains session credentials and letter text.
-        For a security issue, follow SECURITY.md instead.
+        For a security issue, use the security policy instead: https://github.com/parasxos/postbag/security/policy
   - type: textarea
     id: versions
     attributes:
