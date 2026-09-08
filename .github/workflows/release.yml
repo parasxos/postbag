@@ -3,15 +3,23 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing GitHub release tag to publish to PyPI, for example v1.0.0
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    if: github.event_name == 'push'
     uses: ./.github/workflows/ci.yml
 
   publish:
+    if: github.event_name == 'push'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -68,5 +76,34 @@ jobs:
           gh release create "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
             --verify-tag --title "postbag $RELEASE_TAG" --notes-file notes.md
 
-# Distribution is through GitHub in v1. PyPI requires a separately configured
-# project and trusted publisher; no registry credentials are needed here.
+  pypi:
+    # Publishes the exact assets of the GitHub release, never a rebuild. On a
+    # tag push it follows the release; on workflow_dispatch it takes an
+    # existing tag. PyPI trusts this workflow through the "pypi" environment
+    # (trusted publishing, no credentials stored anywhere).
+    needs: publish
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download the release assets and check them against SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release download "$RELEASE_TAG" --dir dist
+          cd dist
+          sha256sum --check SHA256SUMS
+          rm SHA256SUMS
+          version="${RELEASE_TAG#v}"
+          test -f "postbag-${version}-py3-none-any.whl"
+          test -f "postbag-${version}.tar.gz"
+          ls -l
+      - uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+        with:
+          packages-dir: dist
