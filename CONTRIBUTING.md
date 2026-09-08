@@ -36,7 +36,8 @@ Commit subjects are short and imperative.
 1. Bump `__version__` in `postbag.py` and add a `CHANGELOG.md` entry.
 2. CI green on `main`.
 3. `git tag v<version> && git push origin v<version>`. The release
-   workflow builds the wheel and sdist, checks them, and publishes a GitHub
-   release with checksums.
+   workflow builds the wheel and sdist, checks them, publishes a GitHub
+   release with checksums, then publishes those same assets to PyPI
+   through trusted publishing.
 4. Install from the tag in a clean venv and run one two-way exchange with
    real sessions, including the spent-budget refusal.
