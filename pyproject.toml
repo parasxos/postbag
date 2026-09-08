@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "postbag"
 dynamic = ["version"]
-description = "Claude Code and Codex exchange letters, one shared bag. No daemon, no polling, no hooks."
+description = "Any two Claude Code or Codex sessions exchange letters, one shared bag. No daemon, no polling, no hooks."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-keywords = ["claude-code", "codex", "agents", "multi-agent", "cli"]
+keywords = ["claude-code", "claude", "codex", "agents", "multi-agent", "agent-to-agent", "cli"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",

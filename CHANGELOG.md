@@ -4,6 +4,50 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-08
+
+Any two sessions, of the same vendor or not. The nouns and verbs are the
+same four and five, and the words now match Claude Code's own.
+
+### Added
+- Named doors: `join` records the session's door under a name, by default
+  the vendor. A name is a lowercase letter followed by up to fifteen
+  lowercase letters, digits or hyphens. `claude` and `codex` are reserved
+  for doors of that vendor. The last `join` wins both ways, and `join` says
+  what it renamed or took.
+- Any two sessions can correspond, two Claude Code sessions included. The
+  sender is the door the shell runs in, matched against exactly one
+  registered name. There is still no `--from`.
+- `send @name`, with or without the `@`. A send to a name nobody holds
+  refuses and points to `read`, and says which name the last door to hold
+  it has now.
+- Letters are numbered within their exchange. Each `open` starts the next
+  exchange and closes the one before it.
+- `read` begins with one line: the names the bag holds now, each with its
+  vendor, and the open exchange. Records are grouped by exchange, and joins
+  carry a note when they renamed a door or took a name.
+- The envelope names the exchange, "Letter 4 of 12 from @ada to @bob via
+  postbag (exchange 3)", says the budget is shared by everyone in the bag,
+  and lists the registered names when the bag holds more than two.
+- CONCEPT.md gains a table mapping Claude Code's words, `SendMessage` and a
+  session's name, onto postbag's.
+
+### Changed
+- `join` takes a vendor and an optional name: `postbag join claude ada`.
+- The reply command inside every letter is `postbag send @name -`.
+- Refusals never carry door fields or ledger lines. The ledger file is the
+  only place a socket path, token or thread id appears.
+- Argument errors end the same way every refusal does: stop and ask the
+  human.
+
+### Compatibility
+- Ledgers written by 1.0 read without rewriting. Legacy vendor peers read
+  as `@claude` and `@codex`.
+- A 1.0 session cannot answer a 1.1 letter, since its `send` takes only
+  `claude` or `codex`. Upgrade both sessions, then ask each to `join` again.
+- A third door in the bag is experimental. `read` says so, the budget is
+  shared, and nothing more is promised.
+
 ## [1.0.2] - 2026-09-08
 
 Documentation release. No runtime change beyond the version number.
@@ -73,6 +117,7 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
+[1.1.0]: https://github.com/parasxos/postbag/releases/tag/v1.1.0
 [1.0.2]: https://github.com/parasxos/postbag/releases/tag/v1.0.2
 [1.0.1]: https://github.com/parasxos/postbag/releases/tag/v1.0.1
 [1.0.0]: https://github.com/parasxos/postbag/releases/tag/v1.0.0
