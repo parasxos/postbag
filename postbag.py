@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 PEERS = {"claude", "codex"}
 SESSION = {  # door field -> the variable each vendor exports inside its own session
