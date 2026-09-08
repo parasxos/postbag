@@ -37,8 +37,10 @@ Nothing else exists.
    that replies or the words "do not reply". Neither agent needs prior
    instruction.
 4. **The ledger is the truth.** A letter exists iff it was delivered and
-   then recorded. Doors and budgets are read from the ledger, never from
-   anywhere else. History is a file you can `cat`.
+   then recorded. Delivered means the door accepted it: the socket took
+   the bytes or `codex queue` exited 0. It does not mean the agent read
+   it. Doors and budgets are read from the ledger, never from anywhere
+   else. History is a file you can `cat`.
 5. **The human bounds the conversation.** An exchange holds the letters
    its opener granted. When they are spent, `send` refuses and tells the
    agent to stop. Every refusal an agent can meet tells it to stop and
@@ -51,5 +53,5 @@ Nothing else exists.
 ## What is deliberately absent
 
 Roles, topics, threads, acknowledgements, retries, a server, a
-configuration file, a protocol document for the agents. Each was
+configuration file, a protocol document for the agents, a third peer. Each was
 considered and found to add a noun without adding a capability.
