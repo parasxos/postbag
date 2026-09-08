@@ -101,8 +101,8 @@ def check(rec, i, path, left):
         ok = count(rec.get("limit")) and rec["limit"] >= 1
     elif kind == "letter":
         a, b = rec.get("from"), rec.get("to")
-        ok = ((left is None or left >= 1)  # a letter before the first open is legacy, one past the limit is not a record
-              and valid_name(a) and valid_name(b) and a != b and text(rec.get("body")))
+        # a letter before the first open, or past its exchange's limit, is history and still reads
+        ok = valid_name(a) and valid_name(b) and a != b and text(rec.get("body"))
     else:
         ok = False
     if not ok:
@@ -294,10 +294,10 @@ def knock_codex(door, text):
         fail(f"no codex at {codex}, set POSTBAG_CODEX")
     try:
         run = subprocess.run([codex, "queue", "--thread", door["thread"], "--message", text],
-                             capture_output=True, text=True, timeout=30)
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
     except subprocess.TimeoutExpired:
         raise OSError("codex queue did not return in 30 s")
-    if run.returncode:  # its stderr can echo the thread, a door field, so it stays out of the refusal
+    if run.returncode:  # its output is never read: it can echo the thread, a door field, or bytes that do not decode
         raise OSError(f"codex queue exited {run.returncode}")
 
 

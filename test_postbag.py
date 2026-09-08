@@ -175,15 +175,41 @@ def test_a_record_of_the_wrong_shape_is_reported_by_line(bag, line):
         bag.records()
 
 
-def test_a_letter_past_its_exchange_limit_is_not_a_record(bag):
+def test_a_letter_past_its_exchange_limit_still_reads_and_shows_the_overrun(bag, be, capsys):
     bag.ledger_path().parent.mkdir()
     letter = '{"n": %d, "at": "2026-09-08T00:00:00", "kind": "letter", "from": "ada", "to": "bob", "body": "x"}\n'
     bag.ledger_path().write_text('{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1}\n' + letter % 2 + letter % 3)
-    with pytest.raises(SystemExit, match="ledger line 3 is not a record"):
-        bag.records()
+    bag.read(None)
+    assert "2/1" in capsys.readouterr().out  # history is shown, never refused
+    assert bag.budget() == -1
     bag.ledger_path().write_text('{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1}\n' + letter % 2
                                  + '{"n": 3, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1}\n' + letter % 4)
     assert bag.budget() == 0  # a new open resets what is left
+
+
+def _fake_codex(tmp_path, script):
+    exe = tmp_path / "codex"
+    exe.write_text("#!" + __import__("sys").executable + "\n" + script)
+    exe.chmod(0o700)
+    return str(exe)
+
+
+def test_codex_door_output_is_never_read(bag, be, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(postbag, "KNOCK", {"claude": postbag.KNOCK["claude"], "codex": postbag.knock_codex})
+    be("claude"); bag.join("claude")
+    be("codex"); bag.join("codex")
+    be(None); bag.open_exchange(3)
+    be("claude")
+    # undecodable bytes on stderr with exit 0: the letter is delivered and recorded
+    monkeypatch.setenv("POSTBAG_CODEX", _fake_codex(tmp_path, "import sys\nsys.stderr.buffer.write(b'\\xff')\nsys.exit(0)\n"))
+    bag.send("@codex", "one")
+    assert bag.records()[-1]["body"] == "one"
+    # a thread-like string on stderr with a nonzero exit: refusal carries the exit code, never the text
+    monkeypatch.setenv("POSTBAG_CODEX", _fake_codex(tmp_path, "import sys\nprint('rejected thread', sys.argv[3], file=sys.stderr)\nsys.exit(23)\n"))
+    with pytest.raises(SystemExit) as e:
+        bag.send("@codex", "two")
+    assert "codex queue exited 23" in str(e.value) and "t-1" not in str(e.value) and "rejected" not in str(e.value)
+    assert bag.records()[-1]["body"] == "one"
 
 
 def test_a_legacy_letter_before_any_open_reads_but_send_still_needs_an_open(bag, be, capsys):
