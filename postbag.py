@@ -72,10 +72,8 @@ def identity(rec):
 _held = None  # the ledger's open handle while this process holds the exclusive lock
 
 
-def check(rec, i, path, left):
-    """Refuse a record that is not one of the three kinds in its expected shape.
-
-    left is the open exchange's unspent letters, None before the first open."""
+def check(rec, i, path):
+    """Refuse a record that is not one of the three kinds in its expected shape."""
     def text(v):
         return isinstance(v, str) and v != ""
 
@@ -131,17 +129,12 @@ def records():
         fail(f"ledger is truncated after line {text.count(chr(10))}, inspect its last record before repairing it ({path})")
     lines = text.splitlines()
     rows = []
-    left = None
     for i, line in enumerate(lines, 1):
         try:
             rec = json.loads(line)
         except json.JSONDecodeError:
             fail(f"ledger line {i} is not a record ({path})")
-        check(rec, i, path, left)
-        if rec["kind"] == "open":
-            left = rec["limit"]
-        elif rec["kind"] == "letter" and left is not None:
-            left -= 1
+        check(rec, i, path)
         rows.append(rec)
     return rows
 
