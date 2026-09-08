@@ -101,5 +101,5 @@ postbag is a small bridge for exactly two existing sessions. Tools that
 do more, and what they do, are listed in
 [docs/readme-research.md](https://github.com/parasxos/postbag/blob/main/docs/readme-research.md).
 
-[Concept](https://github.com/parasxos/postbag/blob/main/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/blob/main/SECURITY.md) · [Changelog](https://github.com/parasxos/postbag/blob/main/CHANGELOG.md) ·
-[Contributing](https://github.com/parasxos/postbag/blob/main/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/main/LICENSE)
+[Concept](https://github.com/parasxos/postbag/blob/main/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/main/CHANGELOG.md) ·
+[Contributing](https://github.com/parasxos/postbag/blob/main/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/main/LICENSE)
