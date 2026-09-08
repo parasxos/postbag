@@ -8,11 +8,11 @@ counts against a human-set letter budget.
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
 
-![postbag demo: both sessions join, you open an exchange of four letters, Claude asks Codex for a review, Codex answers, read shows the ledger](docs/assets/demo.gif)
+![postbag demo: both sessions join, you open an exchange of four letters, Claude asks Codex for a review, Codex answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/main/docs/assets/demo.gif)
 
 *Real commands, real output, fake doors. The recording uses a temporary
 ledger, a throwaway socket and a stub `codex`, so no session or token is
-shown. Tape: [docs/demo.tape](docs/demo.tape).*
+shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/main/docs/demo.tape).*
 
 Use it to have one agent review the other's diff, to split a task between
 them and agree the interface by letter, or to get a second opinion without
@@ -29,8 +29,8 @@ postbag --version
 
 Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.0.0`.
 
-postbag needs the messaging socket Claude Code added in 2.1.224 and the
-`queue` command Codex added in 0.149. Verified end to end on macOS with
+postbag needs the messaging socket [Claude Code added in 2.1.224](https://github.com/anthropics/claude-code/releases/tag/v2.1.224)
+and the `queue` command [Codex added in 0.149](https://github.com/openai/codex/releases/tag/rust-v0.149.0). Verified end to end on macOS with
 Claude Code 2.1.263 and Codex 0.153.4 from the ChatGPT desktop app. Linux
 passes CI but the live exchange is not verified there. Windows is not
 supported. The Claude session must export `CLAUDE_CODE_MESSAGING_SOCKET`
@@ -74,7 +74,7 @@ a file lock, so two letters sent at once get distinct numbers and one
 budget. The ledger, `~/.postbag/ledger.jsonl`, is the only state, and the
 default is shared across projects. Set the same `POSTBAG_LEDGER` in both
 sessions and your terminal for a separate exchange. No daemon, no polling, no hooks, no server, no config file.
-[CONCEPT.md](CONCEPT.md) is the whole specification in a page.
+[CONCEPT.md](https://github.com/parasxos/postbag/blob/main/CONCEPT.md) is the whole specification in a page.
 
 ## Security and limits
 
@@ -98,13 +98,13 @@ sessions and your terminal for a separate exchange. No daemon, no polling, no ho
 
 ## Neighbours
 
-postbag is the smallest thing that works for exactly two sessions. If you
-want more agents, channels or a daemon, look at
+postbag is a small bridge for exactly two existing sessions. If you want
+more agents, channels or a daemon, look at
 [hcom](https://github.com/aannoo/hcom),
 [AgentBridge](https://github.com/raysonmeng/agent-bridge),
 [Codex Bridge](https://github.com/abhishekgahlot2/codex-claude-bridge) or
 [MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail).
-Notes on each are in [docs/readme-research.md](docs/readme-research.md).
+Notes on each are in [docs/readme-research.md](https://github.com/parasxos/postbag/blob/main/docs/readme-research.md).
 
-[Concept](CONCEPT.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) ·
-[Contributing](CONTRIBUTING.md) · [MIT](LICENSE)
+[Concept](https://github.com/parasxos/postbag/blob/main/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/blob/main/SECURITY.md) · [Changelog](https://github.com/parasxos/postbag/blob/main/CHANGELOG.md) ·
+[Contributing](https://github.com/parasxos/postbag/blob/main/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/main/LICENSE)

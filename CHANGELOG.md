@@ -4,12 +4,24 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.1] - 2026-09-08
+
+Documentation release. No runtime change beyond the version number.
 
 ### Added
-- The release workflow publishes the GitHub release assets to PyPI through
-  trusted publishing. `workflow_dispatch` with a tag publishes an existing
-  release.
+- postbag is on PyPI: `pipx install postbag`. The release workflow publishes
+  the GitHub release assets through trusted publishing, and
+  `workflow_dispatch` with a tag publishes an existing release.
+- A recorded demo, `docs/assets/demo.gif`, made by `vhs docs/demo.tape`
+  against fake doors in `docs/demo-env.sh`. The tape and harness ship in
+  the source archive.
+- `docs/readme-research.md`: what current tool READMEs do, and the
+  neighbouring tools for agent-to-agent messaging on one machine.
+
+### Changed
+- The README is a third of its former length, with no emoji, two badges,
+  absolute links so PyPI renders it, the vendor releases that introduced
+  the messaging socket and `codex queue` named, and the neighbours listed.
 
 ## [1.0.0] - 2026-09-08
 
@@ -51,5 +63,5 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v1.0.0...HEAD
+[1.0.1]: https://github.com/parasxos/postbag/releases/tag/v1.0.1
 [1.0.0]: https://github.com/parasxos/postbag/releases/tag/v1.0.0

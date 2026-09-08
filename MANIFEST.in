@@ -1,3 +1,4 @@
 include postbag
 include CONCEPT.md CHANGELOG.md SECURITY.md CONTRIBUTING.md
 include test_postbag.py test_hardening.py test_transports.py
+include docs/demo.tape docs/demo-env.sh docs/readme-research.md
