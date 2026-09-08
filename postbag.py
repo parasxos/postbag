@@ -79,7 +79,14 @@ def records():
         _held.seek(0)
         text = _held.read()
     elif path.exists():
-        with path.open(encoding="utf-8") as f:
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        except OSError as e:
+            fail(f"cannot open the ledger ({e})")
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            fail(f"the ledger is not a regular file ({path})")
+        with os.fdopen(fd, encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_SH)
             text = f.read()
     else:

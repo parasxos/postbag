@@ -14,13 +14,13 @@ refuses and tells the agent to stop.
 pipx install git+https://github.com/parasxos/postbag@v1.0.0
 ```
 
-One Python file, about 250 lines, standard library only. No daemon, no
-polling, no hooks, no server, no config file.
+One Python module, standard library only. No daemon, no polling, no
+hooks, no server, no config file.
 
 ![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)
 ![python](https://img.shields.io/badge/Python-3.10%E2%80%933.14-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![platform](https://img.shields.io/badge/platform-macOS%20%2B%20Linux-orange)
+![platform](https://img.shields.io/badge/platform-macOS%20verified%20%C2%B7%20Linux%20CI-orange)
 ![stdlib](https://img.shields.io/badge/stdlib-only-blueviolet)
 ![deps](https://img.shields.io/badge/dependencies-zero-brightgreen)
 
@@ -50,28 +50,22 @@ about the diff.
 what is next, and the other agent picks it up on its next turn. The ledger is
 the handoff document.
 
-**In use today.** The author ran a 50-letter exchange in which Claude and
-Codex co-authored a slide deck with cross-review. This release was built by
-the two agents collaborating over postbag: mirrored plans, mirrored
-implementations, cross-review of every merge.
+**Built with itself.** This release was made by a Claude Code session and
+a Codex session corresponding over postbag: mirrored plans, mirrored
+implementations, cross-review of every merge. The pull request is the
+record.
 
-## ⚡ Why it's different
+## ⚡ How it is built
 
-Two agents on one machine can already talk. Every other way adds a moving
-part that has to be running, watched, or fed by hand.
+postbag adds nothing that has to be running. Delivery uses the mechanism
+each vendor built to reach its own agent: Claude Code has a per-session
+messaging socket, Codex has `codex queue`. postbag knocks on the right one,
+then records the letter in one JSONL file. There is no background process,
+no broker, no server to register, no polling loop.
 
-| Approach | Wakes the idle agent? | State lives in | Moving parts | Who bounds the conversation |
-|---|---|---|---|---|
-| Shared file plus polling | Only while a poll loop runs | A file, plus each agent's loop | A loop in every session | Whoever remembers to stop the loop |
-| Message broker | Yes, if a consumer is attached | The broker | A daemon, a client library, a config | The broker's config |
-| MCP server | Only when the agent calls a tool | The server process | A server per session, plus registration | Nobody by default |
-| Human copy-paste | Yes, the human is the transport | The human's clipboard | The human's attention | The human, at every turn |
-| **postbag** | **Yes, through the vendor's own door** | **One JSONL file** | **One script** | **The human, once, with a letter budget** |
-
-Delivery uses the mechanism each vendor built to reach its own agent.
-Claude Code has a per-session messaging socket. Codex has `codex queue`.
-postbag knocks on the right one and records the letter. Nothing runs in the
-background.
+What it leaves out is deliberate too: no acknowledgements, no retries, no
+threads, no roles, no third peer. [CONCEPT.md](CONCEPT.md) lists each
+omission and why it adds a noun without adding a capability.
 
 ## 🛡️ Built to be trusted
 
@@ -82,10 +76,13 @@ background.
   the recipient session. Two agents will keep answering each other. The
   exchange holds exactly the letters its opener granted. When they are spent,
   `send` refuses and tells the agent to stop and ask the human.
-- 🙋 **Only a human can open.** `open` refuses to run inside either agent's
-  session. Neither agent can extend its own budget.
-- 🚪 **Every refusal says stop.** Each error an agent can meet ends with
-  "stop and ask the human", so a failed send never turns into a retry loop.
+- 🙋 **`open` is the human's verb.** `open` refuses to run inside either
+  agent's session, so neither agent extends its own budget. The check reads
+  the session variables the vendors export: a guardrail against mixed-up
+  roles, not authentication.
+- 🚪 **Every operational refusal says stop.** Each refusal an agent can meet
+  while joining, opening or sending ends with "stop and ask the human", so
+  a failed send never turns into a retry loop.
 - 🔒 **Private by construction.** The ledger is created with mode 0600 in a
   0700 directory, opened without following symlinks, validated on every
   read, and written under an exclusive lock. Two letters sent at once get
@@ -96,17 +93,38 @@ background.
 - 📜 **A short spec.** [CONCEPT.md](CONCEPT.md) is the specification: five
   nouns, four verbs, six principles. The code follows it line by line.
 
+## ✅ Prerequisites
+
+- Python 3.10 or later. No third-party packages.
+- A Claude Code session that exports `CLAUDE_CODE_MESSAGING_SOCKET` and
+  `CLAUDE_CODE_MESSAGING_TOKEN` to the commands it runs, and a Codex session
+  that exports `CODEX_SESSION_ID`, with a `codex` binary that has `queue`
+  (0.149 or later).
+- **macOS** is where the two-agent exchange is verified end to end, with
+  Claude Code 2.1.263 and Codex 0.153 from the ChatGPT desktop app.
+- **Linux**: the module runs and the test suite passes in CI. The live
+  two-agent exchange is not verified there. `codex` must be on `PATH` or
+  named by `POSTBAG_CODEX`, and both sessions must export their variables.
+- Windows is not supported. postbag uses Unix sockets and file locks.
+
 ## 🚀 Quick start
 
-1. **Install** (Python 3.10 or later, macOS or Linux):
+1. **Install** with [pipx](https://pipx.pypa.io/):
 
    ```bash
    pipx install git+https://github.com/parasxos/postbag@v1.0.0
    postbag --version
    ```
 
-   Or clone and symlink the checked-in `postbag` executable into your
-   `PATH`. It runs from the checkout with nothing installed.
+   Or run it from a clone with nothing installed. The checked-in `postbag`
+   executable is a thin wrapper around the module:
+
+   ```bash
+   git clone https://github.com/parasxos/postbag.git
+   mkdir -p ~/.local/bin && ln -sf "$PWD/postbag/postbag" ~/.local/bin/postbag
+   ```
+
+   `~/.local/bin` has to be on your `PATH`.
 
 2. **Each agent joins from inside its own session.** Ask Claude Code to run
    the first, and Codex to run the second:
@@ -133,7 +151,9 @@ background.
    and Claude wakes in turn. When the budget is spent, the last letter says
    "do not reply" and the next `send` refuses.
 
-5. **Read the bag** at any time, from anywhere:
+5. **Read the bag** at any time, from anywhere. The transcript below is
+   illustrative: the timestamps, findings and commit id are invented for
+   the example, the format is exact.
 
    ```bash
    postbag read
@@ -229,10 +249,10 @@ version is [SECURITY.md](SECURITY.md).
   typed it. This is the feature, and it is also the risk. The other agent can
   ask yours to do anything you could ask it. The human's letter budget is the
   brake, and it is the only brake.
-- **Bypass permissions is required on the Claude side.** Without it, Claude
-  Code holds the incoming message for approval and the letter waits for you.
-  Run Claude Code in bypass-permissions mode only in a repository and on a
-  machine where you accept what that means.
+- **Unattended delivery was verified with bypass permissions.** In other
+  permission modes Claude Code may hold the incoming letter for your
+  approval; approve it and the turn proceeds. Choose the mode you would
+  choose for the task anyway. postbag does not need more.
 - **The Codex sandbox must be opened a little.** Codex has to write the
   ledger and connect to the Claude socket. Approve the escalation it asks
   for, or run it with a sandbox profile that allows both.
@@ -243,16 +263,19 @@ version is [SECURITY.md](SECURITY.md).
   the append can leave a delivered letter unrecorded. There is no
   acknowledgement, retry or exactly-once guarantee. When in doubt, read the
   ledger and the recipient session before sending again.
-- **Nothing leaves the machine.** postbag talks to a local Unix socket and a
-  local `codex` process. There is no network code in it.
+- **postbag itself sends nothing off the machine.** It talks to a local Unix
+  socket and a local `codex` process; there is no network code in it. The
+  vendor sessions do what they always do: a letter becomes part of the
+  recipient's conversation and reaches that vendor's model service like
+  any other prompt.
 - **Session variables are a guardrail, not a wall.** They stop the human,
   Claude and Codex from mixing up their verbs. They do not authenticate
   against another program running as the same user.
 
 ## 🔧 Troubleshooting
 
-Every error postbag prints ends with "stop and ask the human". These are the
-ones you will meet.
+Every operational refusal ends with "stop and ask the human". These are
+the ones you will meet.
 
 | Symptom | Fix |
 |---|---|
@@ -260,12 +283,12 @@ ones you will meet.
 | `open is the human's verb` | Your shell carries a session variable. Run `open` from a terminal you opened yourself, or `unset` `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN` and `CODEX_SESSION_ID` first. |
 | `send codex is claude's verb; run it inside a claude session` | Addressing one peer names the other. Only Claude sends to Codex, and only Codex sends to Claude. |
 | `codex has not joined` or `claude has not joined` | Ask that agent to run `postbag join <peer>` from its own session. |
-| `codex's door did not answer` | The session restarted and its door is stale. Re-run `postbag join codex` in the new session, then send again. Same for `claude`. |
+| `codex's door did not answer` | Often the session restarted and its door is stale: re-run `postbag join codex` in the new session. A timeout or a nonzero exit can also be ambiguous, so check the recipient session and `postbag read` before sending again. Same for `claude`. |
 | `no codex at ...; set POSTBAG_CODEX` | Point `POSTBAG_CODEX` at the binary. On macOS it is inside the ChatGPT app. Elsewhere put `codex` on `PATH`. |
 | `codex queue` is not a recognised command | Update Codex. `codex queue` arrived in 0.149. |
 | `the exchange's letters are spent` | Working as designed. Open a new exchange from your own terminal with `postbag open --limit N`. |
 | `no exchange is open` | Same fix. Only a human can open one. |
-| Send succeeds but Claude Code shows a pending approval instead of answering | Claude Code is not in bypass-permissions mode. Restart it with bypass permissions and re-run `postbag join claude`. |
+| Send succeeds but Claude Code shows a pending approval instead of answering | Claude Code is holding the letter for approval in its current permission mode. Approve it there. Unattended delivery was verified with bypass permissions. |
 | Codex send fails with a sandbox or permission error | Approve the escalation Codex asks for, or run Codex with a sandbox that allows writing `~/.postbag` and connecting to the Claude socket. |
 | `ledger line N is not a record` or `ledger is truncated after line N` | The ledger was edited or cut short. Fix or remove the bad tail, or move the file aside and start fresh. Both agents must `join` again. |
 | `cannot open the ledger` or `not a regular file` | The path is a symlink, a pipe, or its directory is not writable. Check `POSTBAG_LEDGER` and permissions. |
@@ -291,18 +314,20 @@ Its door goes stale. The next `send` to it fails and tells you to re-run
 `join` in the new session. The ledger keeps every earlier record.
 
 **Can an agent give itself more letters?**
-No. `open` refuses to run inside either session. When the budget is spent
-the agent is told to stop and ask the human. That is the design, not a
-limitation.
+Not through postbag. `open` refuses to run inside either session, and a
+spent budget tells the agent to stop and ask the human. The check reads
+the vendors' session variables, so it is a guardrail against mixed-up
+roles, not authentication against a determined program.
 
 **Why not just paste between the two windows?**
 You can, and postbag does the same thing without you as the transport. The
 idle agent wakes on its own, the letter carries the reply command, and the
 whole exchange is in one file afterwards.
 
-**Windows?**
-No. postbag uses Unix sockets and file locks from the standard library.
-macOS is where it is verified. Linux works when `codex` is on `PATH`.
+**Linux? Windows?**
+Linux runs the module and passes CI, but the live two-agent exchange is
+verified on macOS only. Windows is not supported: postbag uses Unix
+sockets and file locks from the standard library.
 
 ## 🧪 Develop
 

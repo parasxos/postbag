@@ -36,11 +36,14 @@ Nothing else exists.
    letter begins with its number, its sender, and either the one command
    that replies or the words "do not reply". Neither agent needs prior
    instruction.
-4. **The ledger is the truth.** A letter exists iff it was delivered and
-   then recorded. Delivered means the letter was submitted through the door:
-   the socket write returned or `codex queue` exited 0. Neither door
-   acknowledges, and neither proves the agent read it. Doors and budgets are read from the ledger, never from anywhere
-   else. History is a file you can `cat`.
+4. **The ledger is the truth.** The ledger records completed sends: a
+   letter is in it iff it was delivered and then recorded. Delivered means
+   submitted through the door, the socket write returned or `codex queue`
+   exited 0. Neither door acknowledges, and neither proves the agent read
+   it. Submission and recording are two steps, not one; a crash between
+   them leaves a submitted letter unrecorded. Doors and budgets are read
+   from the ledger, never from anywhere else. History is a file you can
+   `cat`.
 5. **The human bounds the conversation.** An exchange holds the letters
    its opener granted. When they are spent, `send` refuses and tells the
    agent to stop. Every refusal an agent can meet tells it to stop and

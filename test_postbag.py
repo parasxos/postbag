@@ -274,3 +274,18 @@ def test_a_ledger_without_a_final_newline_is_truncated_and_untouched(joined):
     with pytest.raises(SystemExit, match="ledger is truncated after line 2"):
         joined.send("codex", "x")
     assert joined.KNOCKED == [] and path.read_text() == before
+
+
+def test_cli_read_refuses_a_fifo_instead_of_hanging(bag, tmp_path):
+    bag.ledger_path().parent.mkdir()
+    os.mkfifo(bag.ledger_path())
+    with pytest.raises(SystemExit, match="not a regular file"):
+        bag.main(["read"])
+
+
+def test_cli_read_refuses_a_symlinked_ledger(bag, tmp_path):
+    bag.ledger_path().parent.mkdir()
+    (tmp_path / "real.jsonl").write_text("")
+    os.symlink(tmp_path / "real.jsonl", bag.ledger_path())
+    with pytest.raises(SystemExit, match="cannot open the ledger"):
+        bag.main(["read"])
