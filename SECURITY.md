@@ -28,9 +28,9 @@ postbag only between sessions you would trust with the same task.
 
 ## What "delivered" means
 
-`send` reports a letter delivered when the door accepted it: the socket
-took the bytes, or `codex queue` exited 0. That is submission, not proof the
-agent read or acted on it. A crash between the knock and the ledger append
+`send` reports a letter delivered when it was submitted through the door:
+the socket write returned, or `codex queue` exited 0. Neither door sends an
+acknowledgement. Submission is not proof the agent read or acted on it. A crash between the knock and the ledger append
 can leave a delivered letter unrecorded. There is no acknowledgement,
 retry or exactly-once guarantee. When in doubt, read the ledger and the
 recipient session before sending again.

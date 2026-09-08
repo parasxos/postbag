@@ -77,13 +77,16 @@ def records():
     path = ledger_path()
     if _held is not None:
         _held.seek(0)
-        lines = _held.read().splitlines()
+        text = _held.read()
     elif path.exists():
         with path.open(encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_SH)
-            lines = f.read().splitlines()
+            text = f.read()
     else:
         return []
+    if text and not text.endswith("\n"):
+        fail(f"ledger is truncated after line {text.count(chr(10))} ({path})")
+    lines = text.splitlines()
     rows = []
     for i, line in enumerate(lines, 1):
         try:

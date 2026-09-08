@@ -236,9 +236,10 @@ version is [SECURITY.md](SECURITY.md).
 - **The Codex sandbox must be opened a little.** Codex has to write the
   ledger and connect to the Claude socket. Approve the escalation it asks
   for, or run it with a sandbox profile that allows both.
-- **Delivered is not read.** `send` reports success when the door accepted
-  the letter: the socket took the bytes, or `codex queue` exited 0. That is
-  not proof the agent read it or acted on it. A crash between the knock and
+- **Delivered means submitted.** `send` reports success when the letter
+  went through the door: the socket write returned, or `codex queue` exited
+  0. Neither door acknowledges. That is not proof the agent read it or acted
+  on it. A crash between the knock and
   the append can leave a delivered letter unrecorded. There is no
   acknowledgement, retry or exactly-once guarantee. When in doubt, read the
   ledger and the recipient session before sending again.
@@ -266,7 +267,7 @@ ones you will meet.
 | `no exchange is open` | Same fix. Only a human can open one. |
 | Send succeeds but Claude Code shows a pending approval instead of answering | Claude Code is not in bypass-permissions mode. Restart it with bypass permissions and re-run `postbag join claude`. |
 | Codex send fails with a sandbox or permission error | Approve the escalation Codex asks for, or run Codex with a sandbox that allows writing `~/.postbag` and connecting to the Claude socket. |
-| `ledger line N is not a record` | The ledger was edited or truncated. Fix that line or move the file aside and start fresh. Both agents must `join` again. |
+| `ledger line N is not a record` or `ledger is truncated after line N` | The ledger was edited or cut short. Fix or remove the bad tail, or move the file aside and start fresh. Both agents must `join` again. |
 | `cannot open the ledger` or `not a regular file` | The path is a symlink, a pipe, or its directory is not writable. Check `POSTBAG_LEDGER` and permissions. |
 | `letter N was submitted to codex's door but not recorded` | The append failed after delivery. Check the recipient session and the ledger before sending again. |
 
@@ -278,8 +279,8 @@ names the other. That is what removes `--from`, roles, and a protocol
 document. A different pair would be a different tool.
 
 **How do I know the other agent read my letter?**
-You do not, from `send` alone. It reports that the door accepted the
-letter. Look at `postbag read` for the reply, or at the recipient session.
+You do not, from `send` alone. It reports that the letter was submitted
+through the door. Look at `postbag read` for the reply, or at the recipient session.
 
 **Does postbag move files?**
 No. It moves text. Work products travel through git, which both agents

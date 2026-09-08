@@ -265,3 +265,12 @@ def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypa
     with pytest.raises(SystemExit, match="was submitted to codex's door but not recorded .disk full.; do not resend"):
         joined.send("codex", "x")
     assert len(joined.KNOCKED) == 1
+
+
+def test_a_ledger_without_a_final_newline_is_truncated_and_untouched(joined):
+    path = joined.ledger_path()
+    before = path.read_text().rstrip("\n")
+    path.write_text(before)
+    with pytest.raises(SystemExit, match="ledger is truncated after line 2"):
+        joined.send("codex", "x")
+    assert joined.KNOCKED == [] and path.read_text() == before
