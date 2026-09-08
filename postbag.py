@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -50,16 +51,22 @@ _held = None  # the ledger's open handle while this process holds the exclusive 
 
 def check(rec, i, path):
     """Refuse a record that is not one of the three kinds in its expected shape."""
-    ok = isinstance(rec, dict) and rec.get("n") == i and isinstance(rec.get("at"), str)
+    def text(v):
+        return isinstance(v, str) and v != ""
+
+    def count(v):
+        return type(v) is int  # bool is an int; a ledger written by hand could hold one
+
+    ok = isinstance(rec, dict) and rec.get("n") == i and count(rec.get("n")) and text(rec.get("at"))
     kind = rec.get("kind") if ok else None
     if kind == "join":
         peer = rec.get("peer")
-        ok = peer in PEERS and all(isinstance(rec.get(f), str) and rec[f] for f in SESSION[peer])
+        ok = text(peer) and peer in PEERS and all(text(rec.get(f)) for f in SESSION[peer])
     elif kind == "open":
-        ok = isinstance(rec.get("limit"), int) and rec["limit"] >= 1
+        ok = count(rec.get("limit")) and rec["limit"] >= 1
     elif kind == "letter":
-        ok = (rec.get("from") in PEERS and rec.get("to") in PEERS and rec["from"] != rec["to"]
-              and isinstance(rec.get("body"), str))
+        a, b = rec.get("from"), rec.get("to")
+        ok = text(a) and text(b) and a in PEERS and b in PEERS and a != b and text(rec.get("body"))
     else:
         ok = False
     if not ok:
@@ -72,7 +79,7 @@ def records():
         _held.seek(0)
         lines = _held.read().splitlines()
     elif path.exists():
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_SH)
             lines = f.read().splitlines()
     else:
@@ -100,11 +107,14 @@ def ledger():
     path = ledger_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
-        os.chmod(path, 0o600)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
     except OSError as e:
-        fail(f"cannot open the ledger privately ({e})")
-    with os.fdopen(fd, "a+") as f:
+        fail(f"cannot open the ledger ({e})")
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        fail(f"the ledger is not a regular file ({path})")
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "a+", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         _held = f
         try:
@@ -204,7 +214,10 @@ def send(to, body):
             KNOCK[to](door(to), envelope(rec, left - 1))
         except OSError as e:
             fail(f"{to}'s door did not answer ({e}); if its session restarted it must run: postbag join {to}")
-        write(rec)
+        try:
+            write(rec)
+        except OSError as e:
+            fail(f"letter {rec['n']} reached {to}'s door but was not recorded ({e}); do not resend before checking {to}'s session")
     print(f"letter {rec['n']} delivered to {to}, {left - 1} left")
 
 
@@ -241,6 +254,13 @@ def main(argv=None):
     s.add_argument("body", help='the text, or "-" to read it from stdin')
     sub.add_parser("read").add_argument("count", nargs="?", type=positive)
     a = p.parse_args(argv)
+    try:
+        run(a)
+    except (OSError, UnicodeError) as e:
+        fail(f"{a.verb} failed ({e})")
+
+
+def run(a):
     if a.verb == "join":
         join(a.peer)
     elif a.verb == "open":
