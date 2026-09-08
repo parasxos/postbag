@@ -4,6 +4,12 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- `SECURITY.md` and `CONTRIBUTING.md` moved to `.github/`, where GitHub
+  still discovers them. The root holds README, CONCEPT and CHANGELOG.
+
 ## [1.0.1] - 2026-09-08
 
 Documentation release. No runtime change beyond the version number.
@@ -63,5 +69,6 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
+[Unreleased]: https://github.com/parasxos/postbag/compare/v1.0.1...HEAD
 [1.0.1]: https://github.com/parasxos/postbag/releases/tag/v1.0.1
 [1.0.0]: https://github.com/parasxos/postbag/releases/tag/v1.0.0

@@ -1,6 +1,6 @@
 # Contributing
 
-Read [CONCEPT.md](CONCEPT.md) first. It is short and it is the
+Read [CONCEPT.md](../CONCEPT.md) first. It is short and it is the
 specification. Two peers, four verbs, one ledger, native doors, a human
 sets the budget. A change that adds a noun has to name the capability the
 existing nouns cannot provide.
