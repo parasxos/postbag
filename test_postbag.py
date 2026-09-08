@@ -121,7 +121,7 @@ def test_letter_recorded_only_after_delivery(joined):
         raise OSError("door closed")
 
     joined.KNOCK["codex"] = closed
-    with pytest.raises(SystemExit, match="door did not answer .door closed.; stop"):
+    with pytest.raises(SystemExit, match="door did not answer .door closed.; stop and ask the human"):
         joined.send("codex", "x")
     assert all(r["kind"] != "letter" for r in joined.records())
 

@@ -27,7 +27,7 @@ SESSION = {  # door field -> the variable each vendor exports inside its own ses
 
 
 def fail(why):
-    sys.exit(f"postbag: {why}")
+    sys.exit(f"postbag: {why}; stop and ask the human")
 
 
 # ledger ---------------------------------------------------------------------
@@ -74,13 +74,14 @@ def inside():
 
 def door(peer):
     joins = [r for r in records() if r["kind"] == "join" and r["peer"] == peer]
-    return joins[-1] if joins else fail(f"{peer} has not joined; stop and tell the human")
+    return joins[-1] if joins else fail(f"{peer} has not joined")
 
 
 def knock_claude(door, text):
     lines = [{"type": "auth", "token": door["token"]},
              {"type": "user", "message": {"role": "user", "content": text}}]
     with socket.socket(socket.AF_UNIX) as s:
+        s.settimeout(30)
         s.connect(door["socket"])
         s.sendall("".join(json.dumps(line) + "\n" for line in lines).encode())
 
@@ -118,7 +119,7 @@ def join(peer):
 
 def open_exchange(limit):
     if inside():
-        fail("open is the human's verb; stop and ask the human")
+        fail("open is the human's verb")
     with ledger() as write:
         write(record("open", limit=limit))
     print(f"exchange open: {limit} letters")
@@ -133,14 +134,14 @@ def send(to, body):
     with ledger() as write:
         left = budget()
         if left is None:
-            fail("no exchange is open; stop and ask the human to `postbag open`")
+            fail("no exchange is open")
         if left <= 0:
-            fail("the exchange's letters are spent; stop and wait for the human")
+            fail("the exchange's letters are spent")
         rec = record("letter", **{"from": sender, "to": to, "body": body})
         try:
             KNOCK[to](door(to), envelope(rec, left - 1))
         except OSError as e:
-            fail(f"{to}'s door did not answer ({e}); stop and tell the human")
+            fail(f"{to}'s door did not answer ({e})")
         write(rec)
     print(f"letter {rec['n']} delivered to {to}, {left - 1} left")
 
