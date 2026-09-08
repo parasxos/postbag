@@ -78,6 +78,14 @@ def test_final_envelope_forbids_reply_even_when_the_body_requests_one(pair, be):
     assert pair.budget() == 0
 
 
+def test_envelope_counts_one_letter_left_in_the_singular(pair, be):
+    open_as_human(pair, be, 2)
+    pair.send("bob", "Penultimate.")
+    assert pair.KNOCKED[-1][2].splitlines()[1] == "1 letter left in this exchange, shared by everyone in the bag."
+    pair.send("bob", "Last.")
+    assert "letter left" not in pair.KNOCKED[-1][2]
+
+
 def test_new_open_replaces_unspent_budget_and_restarts_letter_numbering(pair, be):
     open_as_human(pair, be, 8)
     pair.send("bob", "Spend one of eight.")
@@ -162,6 +170,19 @@ def test_read_empty_bag_still_reports_no_open_exchange(bag, capsys):
     assert "no open exchange" in output.splitlines()[0].lower()
     assert ledger_lines(output) == []
     assert not bag.ledger_path().exists()
+
+
+def test_read_names_a_taken_door_by_ledger_line_and_join_by_timestamp(pair, be, monkeypatch, capsys):
+    be("codex")
+    monkeypatch.setenv("CODEX_SESSION_ID", "presentation-replacement-codex")
+    capsys.readouterr()
+    pair.join("codex", "bob")
+    first = pair.records()[1]
+    assert capsys.readouterr().out == f"@bob (codex) joined; taken from the codex door that joined at {first['at']}\n"
+    output = read_output(pair, capsys)
+    assert "join   @bob (codex), taken from the door that joined at line 2" in output
+    assert "joined at 2026" not in output
+    assert "presentation-replacement-codex" not in output
 
 
 def test_historical_names_survive_rename_and_handover(pair, be, monkeypatch, capsys):

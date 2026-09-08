@@ -61,7 +61,7 @@ def fake_codex(tmp_path):
         "with open(os.environ['POSTBAG_TEST_CAPTURE'], 'a') as capture:\n"
         "    capture.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "if os.environ.get('POSTBAG_TEST_REJECT'):\n"
-        "    print('fake queue rejected the message', file=sys.stderr)\n"
+        "    print('fake queue rejected the message for thread', sys.argv[2], file=sys.stderr)\n"
         "    sys.exit(23)\n",
         encoding="utf-8",
     )
@@ -283,7 +283,10 @@ def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex,
     )
 
     assert result.returncode != 0
-    assert "fake queue rejected" in result.stderr
+    assert "codex queue exited 23" in result.stderr
+    # A stale door's stderr names its thread, a door field: the refusal relays none of it.
+    assert "fake queue rejected" not in result.stderr
+    assert SESSION_VARS["codex"]["CODEX_SESSION_ID"] not in result.stderr
     assert "stop and ask the human" in result.stderr
     assert "Traceback" not in result.stderr
     assert cli.ledger.read_bytes() == before
@@ -336,6 +339,39 @@ def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake
             expected_thread = (sender_extra["CODEX_SESSION_ID"] if letter["to"] == "ada"
                                else SESSION_VARS["codex"]["CODEX_SESSION_ID"])
             assert call[2] == expected_thread
+
+
+@pytest.mark.parametrize("args, said", [
+    (["join", "gemini"], "invalid choice"),
+    (["send", "@bob"], "the following arguments are required: body"),
+    (["open", "--limit", "0"], "must be at least 1"),
+    (["deliver"], "invalid choice"),
+    ([], "the following arguments are required: verb"),
+])
+def test_a_usage_mistake_is_a_refusal_that_says_stop(cli, args, said):
+    result = cli(*args, peer="claude")
+    assert result.returncode == 1
+    assert result.stderr.startswith("postbag: ") and said in result.stderr
+    assert result.stderr.rstrip("\n").endswith("; stop and ask the human")
+    assert "Traceback" not in result.stderr
+    assert not cli.ledger.exists()
+
+
+@pytest.mark.parametrize("args", [["--help"], ["--version"], ["send", "--help"]])
+def test_help_and_version_are_not_refusals(cli, args):
+    result = cli(*args)
+    assert result.returncode == 0, result.stderr
+    assert "stop and ask the human" not in result.stdout + result.stderr
+    assert "postbag" in result.stdout
+
+
+def test_join_with_an_explicit_empty_name_refuses_instead_of_defaulting(cli):
+    result = cli("join", "codex", "", peer="codex")
+    assert result.returncode == 1
+    assert "a name must match" in result.stderr and "stop and ask the human" in result.stderr
+    assert not cli.ledger.exists()
+    assert_ok(cli("join", "codex", peer="codex"))
+    assert rows(cli.ledger)[-1]["peer"] == "codex"
 
 
 def test_read_waits_for_an_exclusive_writer_to_finish_a_record(cli):

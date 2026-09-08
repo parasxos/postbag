@@ -70,7 +70,7 @@ def test_send_is_the_senders_verb(joined, be):
     with pytest.raises(SystemExit, match="@claude is your own name"):
         joined.send("claude", "to myself")
     be(None)
-    with pytest.raises(SystemExit, match="no registered name"):
+    with pytest.raises(SystemExit, match="send is a peer's verb"):
         joined.send("codex", "from a human terminal")
 
 
@@ -162,6 +162,7 @@ def test_a_broken_ledger_is_reported_by_line(bag):
     '{"n": 2, "at": "x", "kind": "open", "limit": 3}',            # wrong sequence number
     '{"n": 1, "at": "x", "kind": "open", "limit": 0}',            # no letters
     '{"n": 1, "at": "x", "kind": "join", "peer": "gemini"}',      # unknown peer
+    '{"n": 1, "at": "x", "kind": "join", "peer": "codex", "vendor": "claude", "socket": "/s", "token": "t"}',  # reserved name, other vendor
     '{"n": 1, "at": "x", "kind": "join", "peer": "codex"}',       # door without its field
     '{"n": 1, "at": "x", "kind": "letter", "from": "claude", "to": "claude", "body": "x"}',
     '{"n": 1, "at": "x", "kind": "receipt"}',                     # unknown kind
@@ -172,6 +173,30 @@ def test_a_record_of_the_wrong_shape_is_reported_by_line(bag, line):
     bag.ledger_path().write_text(line + "\n")
     with pytest.raises(SystemExit, match="ledger line 1 is not a record"):
         bag.records()
+
+
+def test_a_letter_past_its_exchange_limit_is_not_a_record(bag):
+    bag.ledger_path().parent.mkdir()
+    letter = '{"n": %d, "at": "x", "kind": "letter", "from": "ada", "to": "bob", "body": "x"}\n'
+    bag.ledger_path().write_text('{"n": 1, "at": "x", "kind": "open", "limit": 1}\n' + letter % 2 + letter % 3)
+    with pytest.raises(SystemExit, match="ledger line 3 is not a record"):
+        bag.records()
+    bag.ledger_path().write_text('{"n": 1, "at": "x", "kind": "open", "limit": 1}\n' + letter % 2
+                                 + '{"n": 3, "at": "x", "kind": "open", "limit": 1}\n' + letter % 4)
+    assert bag.budget() == 0  # a new open resets what is left
+
+
+def test_a_legacy_letter_before_any_open_reads_but_send_still_needs_an_open(bag, be, capsys):
+    bag.ledger_path().parent.mkdir()
+    bag.ledger_path().write_text(
+        '{"n": 1, "at": "2026-09-08T11:00:00", "kind": "join", "peer": "claude", "socket": "/tmp/x.sock", "token": "tok"}\n'
+        '{"n": 2, "at": "2026-09-08T11:00:01", "kind": "letter", "from": "codex", "to": "claude", "body": "hi"}\n')
+    bag.read(None)
+    out = capsys.readouterr().out
+    assert "before exchange 1" in out and "unassigned" in out and "hi" in out
+    be("claude")
+    with pytest.raises(SystemExit, match="no exchange is open"):
+        bag.send("codex", "x")
 
 
 def test_a_legacy_ledger_still_reads(bag, be):
@@ -264,7 +289,8 @@ def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypa
             yield w
 
     monkeypatch.setattr(joined, "ledger", broken)
-    with pytest.raises(SystemExit, match="was submitted to @codex's door but not recorded .disk full.; do not resend"):
+    with pytest.raises(SystemExit, match="was submitted to @codex's door but not recorded .disk full.; "
+                                          "do not resend before checking @codex's session"):
         joined.send("codex", "x")
     assert len(joined.KNOCKED) == 1
 

@@ -81,7 +81,7 @@ def test_rename_releases_old_name_and_points_recipient_to_new_name(bag, session,
     capsys.readouterr()
     bag.join("codex", "cleo")
     announcement = capsys.readouterr().out
-    assert "@ada" in announcement and "@cleo" in announcement
+    assert announcement == "@cleo (codex) joined; renamed from @ada\n"
     assert bag.door("cleo")["thread"] == ada["thread"]
     refused_without_effect(bag, lambda: bag.door("ada"))
 
@@ -93,17 +93,22 @@ def test_rename_releases_old_name_and_points_recipient_to_new_name(bag, session,
     assert bag.records()[0]["peer"] == "ada"  # History is never rewritten.
 
 
-def test_name_takeover_displaces_sender_and_reroutes_replies(bag, session):
+def test_name_takeover_displaces_sender_and_reroutes_replies(bag, session, capsys):
     register(bag, session, "codex", "one", "ada")
     register(bag, session, "claude", "two", "bob")
     exchange(bag, session)
     session("codex", "one")
     bag.send("bob", "a question before the handover")
+    capsys.readouterr()
     replacement = register(bag, session, "codex", "three", "ada")
+    first = bag.records()[0]
+    assert capsys.readouterr().out == f"@ada (codex) joined; taken from the codex door that joined at {first['at']}\n"
 
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "displaced sender"))
-    assert "join" in error
+    taker = bag.records()[-1]
+    assert f"your name @ada was taken by the codex door that joined at {taker['at']}" in error
+    assert taker["thread"] not in error and "line" not in error
     session("claude", "two")
     bag.send("@ada", "reply to the current holder")
     assert bag.KNOCKED[-1][1]["thread"] == replacement["thread"]
@@ -121,7 +126,8 @@ def test_released_bindings_never_revive_after_rename_and_takeover(bag, session):
     for released in ("ada", "bob"):
         refused_without_effect(bag, lambda name=released: bag.door(name))
     session("codex", "one")
-    refused_without_effect(bag, lambda: bag.send("cleo", "no resurrected identity"))
+    error = refused_without_effect(bag, lambda: bag.send("cleo", "no resurrected identity"))
+    assert "your name @bob was released when its taker renamed to @cleo" in error
 
     replacement = register(bag, session, "codex", "three", "ada")
     session("codex", "two")
@@ -174,7 +180,50 @@ def test_sender_must_have_joined_even_with_complete_vendor_environment(bag, sess
     exchange(bag, session)
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "not registered"))
-    assert "join" in error
+    assert "this session has not joined, run postbag join codex" in error
+
+
+def test_a_displaced_sender_whose_name_nobody_holds_learns_it_was_released(bag, session):
+    register(bag, session, "codex", "one", "ada")
+    register(bag, session, "claude", "two", "bob")
+    taker = register(bag, session, "codex", "three", "ada")
+    session("codex", "three", thread="fake-thread-four")
+    bag.join("codex", "ada")  # the taker restarted: a new door, and the old taker holds nothing
+    session("codex", "three", **taker)
+    bag.join("codex", "dana")  # ... then rejoined under another name, so ada is held by the restart
+    session("codex", "four")
+    exchange(bag, session)
+    session("codex", "one")
+    error = refused_without_effect(bag, lambda: bag.send("bob", "displaced"))
+    assert "your name @ada was taken by the codex door that joined at" in error
+
+    session("codex", "three", thread="fake-thread-four")
+    bag.join("codex", "erin")  # ada is now held by nobody, and its last holder is @erin
+    session("codex", "one")
+    error = refused_without_effect(bag, lambda: bag.send("bob", "displaced"))
+    assert "your name @ada was released when its taker renamed to @erin" in error
+
+
+def test_a_displaced_sender_hears_only_released_when_the_taker_holds_nothing(bag, session):
+    register(bag, session, "codex", "one", "ada")
+    register(bag, session, "claude", "two", "bob")
+    register(bag, session, "codex", "three", "ada")   # took ada from door one
+    register(bag, session, "codex", "three", "cleo")  # released ada
+    register(bag, session, "codex", "four", "cleo")   # took cleo, so the taker of ada holds nothing
+    exchange(bag, session)
+    session("codex", "one")
+    error = refused_without_effect(bag, lambda: bag.send("bob", "displaced"))
+    assert "your name @ada was released; stop and ask the human" in error
+
+
+def test_a_shell_inside_two_unjoined_sessions_is_told_both_joins(bag, session, monkeypatch):
+    register(bag, session, "claude", "two", "bob")
+    exchange(bag, session)
+    session("codex", "one")
+    monkeypatch.setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/postbag-test-nine.sock")
+    monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "fake-token-nine")
+    error = refused_without_effect(bag, lambda: bag.send("bob", "unjoined"))
+    assert "run postbag join claude or postbag join codex" in error
 
 
 def test_two_matching_vendor_identities_refuse_instead_of_picking_one(bag, session, monkeypatch):
