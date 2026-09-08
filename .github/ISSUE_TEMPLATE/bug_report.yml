@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible problem with Postbag.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach the raw ledger. It contains session credentials and letter text.
+        For a security issue, follow SECURITY.md instead.
+  - type: textarea
+    id: versions
+    attributes:
+      label: Environment
+      description: OS, Python, Postbag, and client versions; installation method.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps and expected result
+      description: Include the exact command with any private text removed.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Paste the error with tokens, paths, thread IDs, and private text removed.
+    validations:
+      required: true
