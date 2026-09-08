@@ -20,8 +20,8 @@ Documentation release. No runtime change beyond the version number.
 
 ### Changed
 - The README is a third of its former length, with no emoji, two badges,
-  absolute links so PyPI renders it, the vendor releases that introduced
-  the messaging socket and `codex queue` named, and the neighbours listed.
+  absolute links for PyPI, capability checks and tested vendor versions,
+  and a link to the landscape research.
 
 ## [1.0.0] - 2026-09-08
 

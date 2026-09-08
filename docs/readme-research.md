@@ -50,8 +50,8 @@ itself, not what it lacks.
 | [ClawTeam](https://github.com/HKUDS/ClawTeam) | 5530 | A leader agent spawns workers in git worktrees and coordinates through JSON inboxes or ZeroMQ, with documented task dependencies and lifecycle controls. |
 | [Claude Squad](https://github.com/smtg-ai/claude-squad) | 8448 | A tmux TUI that runs several agents side by side in separate worktrees, with background execution and change review. |
 
-Feature history worth knowing: Codex CLI 0.149 (2026-08-20) added
-`codex queue`, which postbag uses. Claude Code 2.1.224 (2026-08-07) added
+Feature history worth knowing: [Codex CLI 0.149](https://github.com/openai/codex/releases/tag/rust-v0.149.0) (2026-08-20) added
+`codex queue`, which postbag uses. [Claude Code 2.1.224](https://github.com/anthropics/claude-code/releases/tag/v2.1.224) (2026-08-07) added
 public cross-session `SendMessage` and `ListAgents`; postbag uses the
 per-session socket and token that Claude Code exports to its commands, an
 interface described by its environment variables rather than by a release
