@@ -365,6 +365,15 @@ def test_help_and_version_are_not_refusals(cli, args):
     assert "postbag" in result.stdout
 
 
+def test_open_and_read_help_describe_their_arguments(cli):
+    opened = cli("open", "--help")
+    assert opened.returncode == 0 and "by default 12" in opened.stdout
+    assert_ok(cli("open"))
+    assert rows(cli.ledger)[-1]["limit"] == 12
+    read = cli("read", "--help")
+    assert read.returncode == 0 and "last N records" in read.stdout
+
+
 def test_join_with_an_explicit_empty_name_refuses_instead_of_defaulting(cli):
     result = cli("join", "codex", "", peer="codex")
     assert result.returncode == 1

@@ -39,7 +39,7 @@ or not.
 3. **The letter teaches its reader how to answer.** Each delivered
    letter begins with its number in the exchange, its sender and its
    recipient, and either the one command that replies or the words "do
-   not reply". Neither agent needs prior instruction.
+   not send a reply". Neither agent needs prior instruction.
 4. **The ledger is the truth.** The ledger records completed sends: a
    letter is in it iff it was delivered and then recorded. Delivered means
    submitted through the door, the socket write returned or `codex queue`
@@ -50,7 +50,7 @@ or not.
    never from anywhere else. Names are read by replaying the joins in
    order: each join drops the earlier holder of that name and the earlier
    name of that door, and what remains is the bag. History is a file you
-   can `cat`.
+   can `cat`. Ledgers written before names read without rewriting.
 5. **The human bounds the conversation.** An exchange holds the letters
    its opener granted. When they are spent, `send` refuses and tells the
    agent to stop. Every refusal an agent can meet tells it to stop and
@@ -73,13 +73,6 @@ holds another, the refusal says so. A door whose name was
 taken learns it at its next `send`, which refuses. A reply command names
 a name, not a door: it reaches whoever holds the name when it runs. Names
 print with `@`; `send` accepts them with or without it.
-
-Ledgers written before names read without rewriting. A `join` that carries
-no name is read as the vendor's door under the vendor's name, so legacy
-peers read as `@claude` and `@codex`, and a letter recorded before the
-first `open` reads under "before exchange 1". Both sessions must run 1.1
-to exchange named letters: a 1.1 reply command is `postbag send @name -`,
-and a 1.0 `send` cannot run it.
 
 ## The same words as Claude Code
 

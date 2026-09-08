@@ -178,7 +178,7 @@ def test_read_names_a_taken_door_by_ledger_line_and_join_by_timestamp(pair, be, 
     capsys.readouterr()
     pair.join("codex", "bob")
     first = pair.records()[1]
-    assert capsys.readouterr().out == f"@bob (codex) joined; taken from the codex door that joined at {first['at']}\n"
+    assert capsys.readouterr().out == f"@bob (codex) joined, taken from the codex door that joined at {first['at']}\n"
     output = read_output(pair, capsys)
     assert "join   @bob (codex), taken from the door that joined at line 2" in output
     assert "joined at 2026" not in output
@@ -294,3 +294,18 @@ def test_legacy_ledger_displays_default_names_without_rewriting(bag, capsys):
     assert "legacy-presentation-thread" not in output
     assert "/tmp/legacy-presentation.sock" not in output
     assert bag.ledger_path().read_bytes() == original
+
+
+def test_read_prints_the_spec_shape_header_and_letter_rows(pair, be, capsys):
+    open_as_human(pair, be, 12)
+    pair.send("bob", "Review parser.py, top three findings please.")
+    at = pair.records()[-1]["at"]
+    output = read_output(pair, capsys)
+    lines = output.splitlines()
+    assert lines[0] == "in this bag: @ada (claude), @bob (codex). exchange 1: 11 of 12 letters left."
+    assert lines[-2] == f"   4  {at}  1/12   @ada -> @bob"
+    assert lines[-1] == "      Review parser.py, top three findings please."
+    assert not re.search(r"^\s*\d+\s+\S+\s+letter\b", output, re.M)
+    join_row, open_row = lines[3], lines[7]
+    assert join_row.endswith("  join   @ada (claude)") and open_row.endswith("  open   exchange 1, 12 letters")
+    assert join_row.index("@ada") == open_row.index("exchange") == lines[-2].index("@ada")

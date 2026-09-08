@@ -81,7 +81,7 @@ def test_rename_releases_old_name_and_points_recipient_to_new_name(bag, session,
     capsys.readouterr()
     bag.join("codex", "cleo")
     announcement = capsys.readouterr().out
-    assert announcement == "@cleo (codex) joined; renamed from @ada\n"
+    assert announcement == "@cleo (codex) joined, renamed from @ada\n"
     assert bag.door("cleo")["thread"] == ada["thread"]
     refused_without_effect(bag, lambda: bag.door("ada"))
 
@@ -102,7 +102,7 @@ def test_name_takeover_displaces_sender_and_reroutes_replies(bag, session, capsy
     capsys.readouterr()
     replacement = register(bag, session, "codex", "three", "ada")
     first = bag.records()[0]
-    assert capsys.readouterr().out == f"@ada (codex) joined; taken from the codex door that joined at {first['at']}\n"
+    assert capsys.readouterr().out == f"@ada (codex) joined, taken from the codex door that joined at {first['at']}\n"
 
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "displaced sender"))
@@ -360,3 +360,25 @@ def test_legacy_doors_participate_in_replay_without_rewriting_history(bag, sessi
     assert bag.records()[-1]["from"] == "bob"
     assert bag.records()[:3] == legacy
     assert bag.ledger_path().read_text(encoding="utf-8").startswith(original)
+
+
+def test_every_refusal_and_announcement_carries_only_the_stop_suffix_semicolon(bag, session, capsys, monkeypatch):
+    register(bag, session, "codex", "one", "ada")
+    register(bag, session, "claude", "two", "bob")
+    exchange(bag, session)
+    register(bag, session, "codex", "three", "ada")
+    capsys.readouterr()
+    register(bag, session, "codex", "three", "cleo")
+    assert capsys.readouterr().out == "@cleo (codex) joined, renamed from @ada\n"
+    session("claude", "two")
+    refusals = [refused_without_effect(bag, lambda: bag.send("ada", "to a released name"))]
+    session("codex", "one")
+    refusals.append(refused_without_effect(bag, lambda: bag.send("bob", "displaced sender")))
+    session("codex", "three")
+    monkeypatch.setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/postbag-test-two.sock")
+    monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "fake-token-two")
+    refusals.append(refused_without_effect(bag, lambda: bag.send("ada", "two doors in one shell")))
+    assert "@ada is not registered, its last door now holds @cleo, run postbag read" in refusals[0]
+    assert "matches multiple registered names, send from one session" in refusals[2]
+    for refusal in refusals:
+        assert refusal.count(";") == 1 and refusal.endswith("; stop and ask the human")

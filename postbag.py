@@ -82,7 +82,14 @@ def check(rec, i, path, left):
     def count(v):
         return type(v) is int  # bool is an int; a ledger written by hand could hold one
 
-    ok = isinstance(rec, dict) and rec.get("n") == i and count(rec.get("n")) and text(rec.get("at"))
+    def stamp(v):
+        """One isoformat token, as record() writes it: a hand-edited one could forge a line of read."""
+        try:
+            return text(v) and not any(c.isspace() for c in v) and datetime.fromisoformat(v) is not None
+        except ValueError:
+            return False
+
+    ok = isinstance(rec, dict) and rec.get("n") == i and count(rec.get("n")) and stamp(rec.get("at"))
     kind = rec.get("kind") if ok else None
     if kind == "join":
         peer = rec.get("peer")
@@ -121,7 +128,7 @@ def records():
     else:
         return []
     if text and not text.endswith("\n"):
-        fail(f"ledger is truncated after line {text.count(chr(10))} ({path})")
+        fail(f"ledger is truncated after line {text.count(chr(10))}, remove its incomplete last line by hand ({path})")
     lines = text.splitlines()
     rows = []
     left = None
@@ -221,7 +228,7 @@ class Snapshot:
             fail("send is a peer's verb, run it inside a claude or codex session")
         matches = [peer for peer, rec in self.peers.items() if identity(rec) in keys.values()]
         if len(matches) > 1:
-            fail("this shell matches multiple registered names; send from one session")
+            fail("this shell matches multiple registered names, send from one session")
         if matches:
             return matches[0]
         for key in keys.values():
@@ -247,8 +254,8 @@ class Snapshot:
                     if row["kind"] == "join" and row["peer"] == peer), None)
         successor = next((n for n, r in self.peers.items()
                           if old is not None and identity(r) == identity(old)), None)
-        hint = f"; its last door now holds @{successor}" if successor else ""
-        fail(f"@{peer} is not registered{hint}; run postbag read")
+        hint = f", its last door now holds @{successor}" if successor else ""
+        fail(f"@{peer} is not registered{hint}, run postbag read")
 
 
 def where(rec):
@@ -284,7 +291,7 @@ def knock_claude(door, text):
 def knock_codex(door, text):
     codex = codex_path()
     if not shutil.which(codex):
-        fail(f"no codex at {codex}; set POSTBAG_CODEX")
+        fail(f"no codex at {codex}, set POSTBAG_CODEX")
     try:
         run = subprocess.run([codex, "queue", "--thread", door["thread"], "--message", text],
                              capture_output=True, text=True, timeout=30)
@@ -328,7 +335,7 @@ def join(source, peer=None):
                      **{field: os.environ[var] for field, var in SESSION[source].items()})
         renamed, taken = state.register(rec)
         write(rec)
-    print("; ".join([f"@{peer} ({source}) joined", *notes(renamed, taken, where)]))
+    print(", ".join([f"@{peer} ({source}) joined", *notes(renamed, taken, where)]))
 
 
 def open_exchange(limit):
@@ -362,13 +369,13 @@ def send(to, body):
                 KNOCK[vendor(target)](target, envelope(rec, state))
             except OSError as e:
                 command = f"postbag join {vendor(target)}" + (f" {to}" if to != vendor(target) else "")
-                fail(f"@{to}'s door did not answer ({e}); if its session restarted it must run: {command}")
+                fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}")
             submitted = label
             write(rec)
     except OSError as e:
         if submitted is None:
             raise
-        fail(f"{submitted} was submitted to @{to}'s door but not recorded ({e}); "
+        fail(f"{submitted} was submitted to @{to}'s door but not recorded ({e}), "
              f"do not resend before checking @{to}'s session")
     print(f"{label} delivered to @{to}, {left - 1} left")
 
@@ -379,16 +386,18 @@ def read(count):
     current = (f"exchange {state.exchange}: {state.left} of {state.limit} letters left"
                if state.limit is not None else "no open exchange")
     experimental = " Experimental: more than two peers." if len(state.peers) > 2 else ""
-    print(f"Registered in this bag: {names}. {current}.{experimental}")
+    print(f"in this bag: {names}. {current}.{experimental}")
     group = None
     for rec, exchange, number, limit, note in state.history[-count:] if count else state.history:
         if exchange != group:
             print(f"\nexchange {exchange}, {limit} letters" if exchange else "\nbefore exchange 1")
             group = exchange
-        line = f"{rec['n']:>4}  {rec['at']}  {rec['kind']:<6}"
+        kind = rec["kind"]
+        if kind == "letter":  # a letter's place in its exchange stands where the other kinds print their name
+            kind = f"{number}/{limit}" if limit is not None else "unassigned"
+        line = f"{rec['n']:>4}  {rec['at']}  {kind:<6}"
         if rec["kind"] == "letter":
-            ordinal = f"{number}/{limit}" if limit is not None else "unassigned"
-            print(f"{line} {ordinal}  @{rec['from']} -> @{rec['to']}")
+            print(f"{line} @{rec['from']} -> @{rec['to']}")
             print("\n".join("      " + l for l in rec["body"].splitlines()))
         elif rec["kind"] == "open":
             print(f"{line} exchange {exchange}, {rec['limit']} letters")
@@ -418,11 +427,12 @@ def main(argv=None):
     j = sub.add_parser("join")
     j.add_argument("vendor", choices=sorted(PEERS))
     j.add_argument("name", nargs="?", help="the name to hold, by default the vendor")
-    sub.add_parser("open").add_argument("--limit", type=positive, default=12)
+    sub.add_parser("open").add_argument("--limit", type=positive, default=12,
+                                        help="letters in the exchange, by default 12")
     s = sub.add_parser("send")
     s.add_argument("to", help="the recipient's name, with or without @")
     s.add_argument("body", help='the text, or "-" to read it from stdin')
-    sub.add_parser("read").add_argument("count", nargs="?", type=positive)
+    sub.add_parser("read").add_argument("count", nargs="?", type=positive, help="only the last N records")
     a = p.parse_args(argv)
     try:
         run(a)

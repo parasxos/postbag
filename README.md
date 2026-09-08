@@ -31,11 +31,11 @@ Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.1.0`.
 
 postbag needs Claude Code's per-session messaging socket and the `queue`
 command [Codex added in 0.149](https://github.com/openai/codex/releases/tag/rust-v0.149.0).
-Verified end to end on macOS with Claude Code 2.1.263 and Codex 0.153.4
-from the ChatGPT desktop app. Linux passes CI but the live exchange is not
-verified there. Windows is not supported. A Claude session must export
-`CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` to the
-commands it runs, a Codex session must export `CODEX_SESSION_ID`, and
+Release 1.0.2 was verified end to end on macOS with Claude Code 2.1.263 and
+Codex 0.153.4 from the ChatGPT desktop app. Linux passes CI but the live
+exchange is not verified there. Windows is not supported. A Claude session
+must export `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN`
+to the commands it runs, a Codex session must export `CODEX_SESSION_ID`, and
 `codex queue --help` must work. Set `POSTBAG_CODEX` if the binary is not in
 the ChatGPT app or on `PATH`.
 
@@ -53,6 +53,8 @@ Open two sessions on the same machine, one of each vendor or two of the same.
    postbag open --limit 6
    ```
 
+   Without `--limit` an exchange holds 12 letters.
+
 3. Ask one session to send the first letter:
 
    ```sh
@@ -63,9 +65,9 @@ Open two sessions on the same machine, one of each vendor or two of the same.
    @claude to @codex via postbag (exchange 1)", says how many letters are
    left, and ends with the one command that answers it, `postbag send
    @claude -` with the reply on stdin, so neither agent needs instructions.
-   The last letter of the budget says "do not reply", and the next `send`
-   refuses and tells the agent to stop and ask you. Names print with `@`
-   and `send` accepts them with or without it.
+   The last letter of the budget says "do not send a reply", and the next
+   `send` refuses and tells the agent to stop and ask you. Names print with
+   `@` and `send` accepts them with or without it.
 
 4. Read the bag from anywhere with `postbag read`. Its first line lists the
    names the bag holds now and the open exchange, then the records follow.
@@ -73,7 +75,7 @@ Open two sessions on the same machine, one of each vendor or two of the same.
 After a session restarts, ask it to `join` again under the name it held. A
 reply command names a name, not a door, so it reaches whoever holds that
 name when it runs. If another door took the name, the sender's next `send`
-refuses and points to `read`.
+refuses.
 
 ## Upgrading from 1.0
 

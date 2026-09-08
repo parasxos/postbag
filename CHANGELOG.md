@@ -7,7 +7,7 @@ uses [Semantic Versioning](https://semver.org/).
 ## [1.1.0] - 2026-09-08
 
 Any two sessions, of the same vendor or not. The nouns and verbs are the
-same four and five, and the words now match Claude Code's own.
+same five and four, and the words now match Claude Code's own.
 
 ### Added
 - Named doors: `join` records the session's door under a name, by default
@@ -19,8 +19,8 @@ same four and five, and the words now match Claude Code's own.
   sender is the door the shell runs in, matched against exactly one
   registered name. There is still no `--from`.
 - `send @name`, with or without the `@`. A send to a name nobody holds
-  refuses and points to `read`, and says which name the last door to hold
-  it has now.
+  refuses and points to `read`, and, when the last door to hold it now
+  holds another name, says which.
 - Letters are numbered within their exchange. Each `open` starts the next
   exchange and closes the one before it.
 - `read` begins with one line: the names the bag holds now, each with its
@@ -35,10 +35,13 @@ same four and five, and the words now match Claude Code's own.
 ### Changed
 - `join` takes a vendor and an optional name: `postbag join claude ada`.
 - The reply command inside every letter is `postbag send @name -`.
-- Refusals never carry door fields or ledger lines. The ledger file is the
-  only place a socket path, token or thread id appears.
+- Refusals never carry door fields, and only ledger-integrity refusals name
+  a ledger line. The ledger file is the only place a socket path, token or
+  thread id appears.
 - Argument errors end the same way every refusal does: stop and ask the
-  human.
+  human. A truncated ledger's refusal says how to repair it.
+- `open --help` and `read --help` describe their arguments, and the default
+  budget of 12 letters is stated.
 
 ### Compatibility
 - Ledgers written by 1.0 read without rewriting. Legacy vendor peers read
