@@ -41,7 +41,9 @@ def test_failed_append_reports_that_submission_already_happened(joined, monkeypa
     with pytest.raises(SystemExit) as error:
         joined.send("codex", "one submission")
     message = str(error.value)
-    assert any(word in message for word in ("submitted", "submission", "may already"))
+    assert any(word in message for word in ("submitted", "submission", "may already", "reached"))
+    assert "not recorded" in message
+    assert "do not resend" in message
     assert "stop and ask the human" in message
     assert len(joined.KNOCKED) == 1
     assert not any(rec["kind"] == "letter" for rec in joined.records())
