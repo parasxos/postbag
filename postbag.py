@@ -128,7 +128,7 @@ def records():
     else:
         return []
     if text and not text.endswith("\n"):
-        fail(f"ledger is truncated after line {text.count(chr(10))}, remove its incomplete last line by hand ({path})")
+        fail(f"ledger is truncated after line {text.count(chr(10))}, inspect its last record before repairing it ({path})")
     lines = text.splitlines()
     rows = []
     left = None

@@ -325,7 +325,7 @@ def test_a_ledger_without_a_final_newline_is_truncated_and_untouched(joined):
     path = joined.ledger_path()
     before = path.read_text().rstrip("\n")
     path.write_text(before)
-    with pytest.raises(SystemExit, match="ledger is truncated after line 2, remove its incomplete last line by hand"):
+    with pytest.raises(SystemExit, match="ledger is truncated after line 2, inspect its last record before repairing it"):
         joined.send("codex", "x")
     assert joined.KNOCKED == [] and path.read_text() == before
 
