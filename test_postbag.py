@@ -215,3 +215,53 @@ def test_cli_version(capsys):
     with pytest.raises(SystemExit) as e:
         postbag.main(["--version"])
     assert e.value.code == 0 and capsys.readouterr().out.strip() == f"postbag {postbag.__version__}"
+
+
+@pytest.mark.parametrize("line", [
+    '{"n": true, "at": "x", "kind": "open", "limit": 3}',
+    '{"n": 1, "at": "x", "kind": "open", "limit": true}',
+    '{"n": 1, "at": "x", "kind": "open", "limit": 1.0}',
+    '{"n": 1, "at": "", "kind": "open", "limit": 3}',
+    '{"n": 1, "at": "x", "kind": "join", "peer": []}',
+    '{"n": 1, "at": "x", "kind": "letter", "from": "claude", "to": "codex", "body": ""}',
+])
+def test_a_record_of_the_wrong_type_is_reported_by_line(bag, line):
+    bag.ledger_path().parent.mkdir()
+    bag.ledger_path().write_text(line + "\n")
+    with pytest.raises(SystemExit, match="ledger line 1 is not a record"):
+        bag.records()
+
+
+def test_the_ledger_must_be_a_regular_file(bag, be, tmp_path):
+    os.mkfifo(tmp_path / "fifo")
+    bag.ledger_path().parent.mkdir()
+    os.symlink(tmp_path / "fifo", bag.ledger_path())
+    be("claude")
+    with pytest.raises(SystemExit, match="cannot open the ledger"):
+        bag.join("claude")
+
+
+def test_an_unreadable_ledger_is_a_refusal_not_a_traceback(bag, be, capsys):
+    be("claude")
+    bag.join("claude")
+    bag.ledger_path().chmod(0)
+    with pytest.raises(SystemExit, match="read failed"):
+        bag.main(["read"])
+
+
+def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypatch):
+    real = joined.ledger
+
+    @__import__("contextlib").contextmanager
+    def broken():
+        with real() as write:
+            def w(rec):
+                if rec["kind"] == "letter":
+                    raise OSError("disk full")
+                write(rec)
+            yield w
+
+    monkeypatch.setattr(joined, "ledger", broken)
+    with pytest.raises(SystemExit, match="reached codex's door but was not recorded .disk full.; do not resend"):
+        joined.send("codex", "x")
+    assert len(joined.KNOCKED) == 1
