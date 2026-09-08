@@ -213,21 +213,26 @@ def send(to, body):
         fail(f"send {to} is {sender}'s verb; run it inside a {sender} session")
     if not body.strip():
         fail("a letter needs text")
-    with ledger() as write:
-        left = budget()
-        if left is None:
-            fail("no exchange is open")
-        if left <= 0:
-            fail("the exchange's letters are spent")
-        rec = record("letter", **{"from": sender, "to": to, "body": body})
-        try:
-            KNOCK[to](door(to), envelope(rec, left - 1))
-        except OSError as e:
-            fail(f"{to}'s door did not answer ({e}); if its session restarted it must run: postbag join {to}")
-        try:
+    submitted = None  # the letter, once its door took it: from then on a failure must not invite a resend
+    try:
+        with ledger() as write:
+            left = budget()
+            if left is None:
+                fail("no exchange is open")
+            if left <= 0:
+                fail("the exchange's letters are spent")
+            rec = record("letter", **{"from": sender, "to": to, "body": body})
+            try:
+                KNOCK[to](door(to), envelope(rec, left - 1))
+            except OSError as e:
+                fail(f"{to}'s door did not answer ({e}); if its session restarted it must run: postbag join {to}")
+            submitted = rec
             write(rec)
-        except OSError as e:
-            fail(f"letter {rec['n']} was submitted to {to}'s door but not recorded ({e}); do not resend before checking {to}'s session")
+    except OSError as e:
+        if submitted is None:
+            raise
+        fail(f"letter {submitted['n']} was submitted to {to}'s door but not recorded ({e}); "
+             f"do not resend before checking {to}'s session")
     print(f"letter {rec['n']} delivered to {to}, {left - 1} left")
 
 

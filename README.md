@@ -99,7 +99,7 @@ omission and why it adds a noun without adding a capability.
 - A Claude Code session that exports `CLAUDE_CODE_MESSAGING_SOCKET` and
   `CLAUDE_CODE_MESSAGING_TOKEN` to the commands it runs, and a Codex session
   that exports `CODEX_SESSION_ID`, with a `codex` binary that has `queue`
-  (0.149 or later).
+  (0.149 or later; `codex queue --help` must work).
 - **macOS** is where the two-agent exchange is verified end to end, with
   Claude Code 2.1.263 and Codex 0.153 from the ChatGPT desktop app.
 - **Linux**: the module runs and the test suite passes in CI. The live
