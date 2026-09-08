@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""bridge: two agents correspond by letters. See CONCEPT.md.
+
+    bridge join claude              # inside a Claude Code session
+    bridge join codex [--thread ID] # inside a Codex session
+    bridge open "topic"             # the human starts an exchange
+    bridge send codex "text"        # a letter from claude to codex ("-" reads stdin)
+    bridge read [N]                 # the last N ledger records
+"""
+import argparse
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path(os.environ.get("BRIDGE_HOME", "~/.bridge")).expanduser()
+LEDGER = HOME / "ledger.jsonl"
+PEERS = {"claude", "codex"}
+LIMIT = int(os.environ.get("BRIDGE_LIMIT", "12"))
+CODEX = os.environ.get("BRIDGE_CODEX", "/Applications/ChatGPT.app/Contents/Resources/codex")
+
+
+def fail(why):
+    sys.exit(f"bridge: {why}")
+
+
+# ledger ---------------------------------------------------------------------
+
+def records():
+    if not LEDGER.exists():
+        return []
+    return [json.loads(line) for line in LEDGER.read_text().splitlines() if line]
+
+
+def append(rec):
+    HOME.mkdir(parents=True, exist_ok=True)
+    with LEDGER.open("a") as f:
+        f.write(json.dumps(rec) + "\n")
+    return rec
+
+
+def record(kind, **fields):
+    return {"n": len(records()) + 1, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "kind": kind, **fields}
+
+
+def exchange():
+    """Letters since the human last opened an exchange."""
+    letters = []
+    for rec in reversed(records()):
+        if rec["kind"] == "open":
+            break
+        if rec["kind"] == "letter":
+            letters.append(rec)
+    return letters
+
+
+# doors ----------------------------------------------------------------------
+
+def door_path(peer):
+    return HOME / f"{peer}.json"
+
+
+def door(peer):
+    path = door_path(peer)
+    if not path.exists():
+        fail(f"{peer} has not joined")
+    return json.loads(path.read_text())
+
+
+def knock_claude(door, text):
+    lines = [{"type": "auth", "token": door["token"]},
+             {"type": "user", "message": {"role": "user", "content": text}}]
+    with socket.socket(socket.AF_UNIX) as s:
+        s.connect(door["socket"])
+        s.sendall("".join(json.dumps(line) + "\n" for line in lines).encode())
+
+
+def knock_codex(door, text):
+    subprocess.run([CODEX, "queue", "--thread", door["thread"], "--message", text],
+                   check=True, stdout=subprocess.DEVNULL)
+
+
+KNOCK = {"claude": knock_claude, "codex": knock_codex}
+
+
+# verbs ----------------------------------------------------------------------
+
+def join(peer, thread=None):
+    if peer == "claude":
+        sock, token = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET"), os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN")
+        if not (sock and token):
+            fail("join claude from inside a Claude Code session")
+        my_door = {"socket": sock, "token": token}
+    else:
+        thread = thread or os.environ.get("CODEX_SESSION_ID")
+        if not thread:
+            fail("join codex from inside a Codex session, or pass --thread ID")
+        my_door = {"thread": thread}
+    HOME.mkdir(parents=True, exist_ok=True)
+    door_path(peer).write_text(json.dumps(my_door))
+    append(record("join", peer=peer))
+    print(f"{peer} joined")
+
+
+def open_exchange(topic):
+    append(record("open", topic=topic, limit=LIMIT))
+    print(f"exchange open: {topic} ({LIMIT} letters)")
+
+
+def envelope(rec):
+    return (f"Letter {rec['n']} from {rec['from']} via bridge. "
+            f"Reply with: bridge send {rec['from']} \"...\"\n\n{rec['body']}")
+
+
+def send(to, body):
+    sender = (PEERS - {to}).pop()
+    if len(exchange()) >= LIMIT:
+        fail(f"exchange budget of {LIMIT} letters is spent; a human must `bridge open`")
+    rec = record("letter", **{"from": sender}, to=to, body=body)
+    KNOCK[to](door(to), envelope(rec))
+    append(rec)
+    print(f"letter {rec['n']} delivered to {to}")
+
+
+def read(count):
+    for rec in records()[-count:]:
+        head = f"{rec['n']:>4}  {rec['at']}  {rec['kind']:<6}"
+        if rec["kind"] == "letter":
+            print(f"{head} {rec['from']} -> {rec['to']}\n{indent(rec['body'])}")
+        elif rec["kind"] == "open":
+            print(f"{head} {rec['topic']} ({rec['limit']} letters)")
+        else:
+            print(f"{head} {rec['peer']}")
+
+
+def indent(text):
+    return "\n".join("      " + line for line in text.splitlines())
+
+
+# cli ------------------------------------------------------------------------
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="bridge", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="verb", required=True)
+    j = sub.add_parser("join"); j.add_argument("peer", choices=sorted(PEERS)); j.add_argument("--thread")
+    o = sub.add_parser("open"); o.add_argument("topic")
+    s = sub.add_parser("send"); s.add_argument("to", choices=sorted(PEERS)); s.add_argument("body")
+    r = sub.add_parser("read"); r.add_argument("count", nargs="?", type=int, default=10)
+    a = p.parse_args(argv)
+    if a.verb == "join":
+        join(a.peer, a.thread)
+    elif a.verb == "open":
+        open_exchange(a.topic)
+    elif a.verb == "send":
+        send(a.to, sys.stdin.read().rstrip("\n") if a.body == "-" else a.body)
+    else:
+        read(a.count)
+
+
+if __name__ == "__main__":
+    main()
