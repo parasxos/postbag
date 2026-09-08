@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
 """bridge: two agents correspond by letters. See CONCEPT.md.
 
-    bridge join claude              # inside a Claude Code session
-    bridge join codex [--thread ID] # inside a Codex session
-    bridge open "topic"             # the human starts an exchange
-    bridge send codex "text"        # a letter from claude to codex ("-" reads stdin)
-    bridge read [N]                 # the last N ledger records
+    bridge join claude|codex     # inside that session: publish its door
+    bridge open [--limit N]      # a human, outside both sessions: an exchange of at most N letters
+    bridge send codex "text"     # a letter from claude to codex; "-" reads the body from stdin
+    bridge read [N]              # the ledger, or its last N records
 """
 import argparse
+import fcntl
 import json
 import os
 import socket
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
-HOME = Path(os.environ.get("BRIDGE_HOME", "~/.bridge")).expanduser()
-LEDGER = HOME / "ledger.jsonl"
-PEERS = {"claude", "codex"}
-LIMIT = int(os.environ.get("BRIDGE_LIMIT", "12"))
+LEDGER = Path(os.environ.get("BRIDGE_LEDGER", "~/.bridge/ledger.jsonl")).expanduser()
 CODEX = os.environ.get("BRIDGE_CODEX", "/Applications/ChatGPT.app/Contents/Resources/codex")
+PEERS = {"claude", "codex"}
+SESSION = {  # door field -> the variable each vendor exports inside its own session
+    "claude": {"socket": "CLAUDE_CODE_MESSAGING_SOCKET", "token": "CLAUDE_CODE_MESSAGING_TOKEN"},
+    "codex": {"thread": "CODEX_SESSION_ID"},
+}
 
 
 def fail(why):
@@ -30,44 +33,42 @@ def fail(why):
 # ledger ---------------------------------------------------------------------
 
 def records():
-    if not LEDGER.exists():
-        return []
-    return [json.loads(line) for line in LEDGER.read_text().splitlines() if line]
-
-
-def append(rec):
-    HOME.mkdir(parents=True, exist_ok=True)
-    with LEDGER.open("a") as f:
-        f.write(json.dumps(rec) + "\n")
-    return rec
+    return [json.loads(line) for line in LEDGER.read_text().splitlines() if line] if LEDGER.exists() else []
 
 
 def record(kind, **fields):
     return {"n": len(records()) + 1, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "kind": kind, **fields}
 
 
-def exchange():
-    """Letters since the human last opened an exchange."""
-    letters = []
+@contextmanager
+def ledger():
+    """The ledger held exclusively; yields the function that appends one record."""
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with LEDGER.open("a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield lambda rec: f.write(json.dumps(rec) + "\n")
+
+
+def budget():
+    """Letters left in the open exchange; None when no exchange is open."""
+    sent = 0
     for rec in reversed(records()):
         if rec["kind"] == "open":
-            break
-        if rec["kind"] == "letter":
-            letters.append(rec)
-    return letters
+            return rec["limit"] - sent
+        sent += rec["kind"] == "letter"
+    return None
 
 
 # doors ----------------------------------------------------------------------
 
-def door_path(peer):
-    return HOME / f"{peer}.json"
+def inside():
+    """The peer whose session this shell runs in, or None for a human's terminal."""
+    return next((p for p, vars in SESSION.items() if all(os.environ.get(v) for v in vars.values())), None)
 
 
 def door(peer):
-    path = door_path(peer)
-    if not path.exists():
-        fail(f"{peer} has not joined")
-    return json.loads(path.read_text())
+    joins = [r for r in records() if r["kind"] == "join" and r["peer"] == peer]
+    return joins[-1] if joins else fail(f"{peer} has not joined")
 
 
 def knock_claude(door, text):
@@ -86,58 +87,57 @@ def knock_codex(door, text):
 KNOCK = {"claude": knock_claude, "codex": knock_codex}
 
 
+def envelope(rec):
+    return (f"Letter {rec['n']} from {rec['from']} via bridge. If it needs an answer, reply with:\n"
+            f"bridge send {rec['from']} - <<'EOF'\n...\nEOF\n\n{rec['body']}")
+
+
 # verbs ----------------------------------------------------------------------
 
-def join(peer, thread=None):
-    if peer == "claude":
-        sock, token = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET"), os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN")
-        if not (sock and token):
-            fail("join claude from inside a Claude Code session")
-        my_door = {"socket": sock, "token": token}
-    else:
-        thread = thread or os.environ.get("CODEX_SESSION_ID")
-        if not thread:
-            fail("join codex from inside a Codex session, or pass --thread ID")
-        my_door = {"thread": thread}
-    HOME.mkdir(parents=True, exist_ok=True)
-    door_path(peer).write_text(json.dumps(my_door))
-    append(record("join", peer=peer))
+def join(peer):
+    if inside() != peer:
+        fail(f"join {peer} from inside a {peer} session")
+    with ledger() as write:
+        write(record("join", peer=peer, **{field: os.environ[var] for field, var in SESSION[peer].items()}))
     print(f"{peer} joined")
 
 
-def open_exchange(topic):
-    append(record("open", topic=topic, limit=LIMIT))
-    print(f"exchange open: {topic} ({LIMIT} letters)")
-
-
-def envelope(rec):
-    return (f"Letter {rec['n']} from {rec['from']} via bridge. "
-            f"Reply with: bridge send {rec['from']} \"...\"\n\n{rec['body']}")
+def open_exchange(limit):
+    if inside():
+        fail("open is the human's verb; run it outside both sessions")
+    with ledger() as write:
+        write(record("open", limit=limit))
+    print(f"exchange open: {limit} letters")
 
 
 def send(to, body):
     sender = (PEERS - {to}).pop()
-    if len(exchange()) >= LIMIT:
-        fail(f"exchange budget of {LIMIT} letters is spent; a human must `bridge open`")
-    rec = record("letter", **{"from": sender}, to=to, body=body)
-    KNOCK[to](door(to), envelope(rec))
-    append(rec)
-    print(f"letter {rec['n']} delivered to {to}")
+    with ledger() as write:
+        left = budget()
+        if left is None:
+            fail("no exchange is open; a human opens one with `bridge open`")
+        if left <= 0:
+            fail("the exchange's letters are spent; stop and wait for the human")
+        rec = record("letter", **{"from": sender, "to": to, "body": body})
+        try:
+            KNOCK[to](door(to), envelope(rec))
+        except (OSError, subprocess.CalledProcessError) as e:
+            fail(f"{to}'s door did not answer ({e}); {to} must `bridge join {to}` again")
+        write(rec)
+    print(f"letter {rec['n']} delivered to {to}, {left - 1} left")
 
 
 def read(count):
-    for rec in records()[-count:]:
-        head = f"{rec['n']:>4}  {rec['at']}  {rec['kind']:<6}"
+    rows = records()
+    for rec in rows[-count:] if count else rows:
+        line = f"{rec['n']:>4}  {rec['at']}  {rec['kind']:<6}"
         if rec["kind"] == "letter":
-            print(f"{head} {rec['from']} -> {rec['to']}\n{indent(rec['body'])}")
+            print(f"{line} {rec['from']} -> {rec['to']}")
+            print("\n".join("      " + l for l in rec["body"].splitlines()))
         elif rec["kind"] == "open":
-            print(f"{head} {rec['topic']} ({rec['limit']} letters)")
+            print(f"{line} {rec['limit']} letters")
         else:
-            print(f"{head} {rec['peer']}")
-
-
-def indent(text):
-    return "\n".join("      " + line for line in text.splitlines())
+            print(f"{line} {rec['peer']}")
 
 
 # cli ------------------------------------------------------------------------
@@ -145,15 +145,17 @@ def indent(text):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="bridge", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="verb", required=True)
-    j = sub.add_parser("join"); j.add_argument("peer", choices=sorted(PEERS)); j.add_argument("--thread")
-    o = sub.add_parser("open"); o.add_argument("topic")
-    s = sub.add_parser("send"); s.add_argument("to", choices=sorted(PEERS)); s.add_argument("body")
-    r = sub.add_parser("read"); r.add_argument("count", nargs="?", type=int, default=10)
+    sub.add_parser("join").add_argument("peer", choices=sorted(PEERS))
+    sub.add_parser("open").add_argument("--limit", type=int, default=12)
+    s = sub.add_parser("send")
+    s.add_argument("to", choices=sorted(PEERS))
+    s.add_argument("body", help='the text, or "-" to read it from stdin')
+    sub.add_parser("read").add_argument("count", nargs="?", type=lambda n: max(int(n), 1))
     a = p.parse_args(argv)
     if a.verb == "join":
-        join(a.peer, a.thread)
+        join(a.peer)
     elif a.verb == "open":
-        open_exchange(a.topic)
+        open_exchange(a.limit)
     elif a.verb == "send":
         send(a.to, sys.stdin.read().rstrip("\n") if a.body == "-" else a.body)
     else:

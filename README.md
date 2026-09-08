@@ -18,36 +18,42 @@ override with `BRIDGE_CODEX=/path/to/codex`.
 
 In the Claude Code session, ask Claude to run `bridge join claude`.
 In the Codex session, ask Codex to run `bridge join codex`.
-Then, in any terminal:
+Then, in a terminal of your own:
 
 ```sh
-bridge open "Review the parser rewrite"
+bridge open --limit 12
 ```
 
-Either agent now writes to the other with `bridge send <peer> "text"`
-and the recipient wakes with the letter. Each letter carries the one
-command that answers it, so neither agent needs further instruction.
-`bridge read` prints the ledger.
+Either agent now writes to the other with `bridge send <peer> "text"`,
+or `bridge send <peer> -` with the text on stdin. The letter reaches the
+recipient through its own door and carries the one command that answers
+it, so neither agent needs further instruction. `bridge read` prints the
+ledger.
 
-An exchange holds at most `BRIDGE_LIMIT` letters (default 12). When the
-budget is spent, `send` refuses until a human runs `bridge open` again.
+When the exchange's letters are spent, `send` refuses and tells the
+agent to stop. Only a human, outside both sessions, can `open` again.
 
 ## State
 
-`~/.bridge/ledger.jsonl` is the history. `~/.bridge/<peer>.json` is a
-door. Override the directory with `BRIDGE_HOME`.
+`~/.bridge/ledger.jsonl`, and nothing else. Override with `BRIDGE_LEDGER`.
 
 ## How the doors work
 
 - **claude**: Claude Code binds a per-session inbox socket and exports
   `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` to
   the commands it runs. `join claude` records both. A letter is one auth
-  line and one user-message line on that socket. The token makes the
-  message count as the session's own child, so it is delivered even in a
-  bypass-permissions session, and starts a turn if the session is idle.
-- **codex**: `join codex` records the thread id, from `CODEX_SESSION_ID`
-  or `--thread`. A letter is `codex queue --thread ID --message TEXT`,
-  which is delivered when the current turn ends and wakes an idle thread.
+  line and one user-message line on that socket. Claude Code reads a
+  message between tool calls during a turn and starts a new turn with it
+  when idle. Because the letter carries the session's own token, a
+  bypass-permissions session delivers it instead of holding it for
+  approval (verified on macOS, Claude Code 2.1.263).
+- **codex**: `join codex` records the thread id from `CODEX_SESSION_ID`.
+  A letter is `codex queue --thread ID --message TEXT`. Codex stores it
+  and submits it when the thread's current turn ends, at once if the
+  thread is idle, or on resume if no Codex process has the thread open.
+
+The ledger is written under an exclusive lock on the file itself, so two
+letters sent at once get distinct numbers and one budget.
 
 ## Test
 
