@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Verify tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import postbag
+          expected = f'v{postbag.__version__}'
+          assert os.environ['RELEASE_TAG'] == expected, f'Tag must be {expected}'
+          PY
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+      - name: Verify checksums
+        run: |
+          cd dist
+          sha256sum --check SHA256SUMS
+      - name: Take the release notes from the changelog section for this tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import os, re
+          version = os.environ['RELEASE_TAG'].lstrip('v')
+          text = open('CHANGELOG.md', encoding='utf-8').read()
+          m = re.search(rf'^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)', text, re.M | re.S)
+          assert m, f'CHANGELOG.md has no section for {version}'
+          notes = m.group(1).strip() + '\n'
+          # relative links resolve in the repository, not on the release page
+          base = f"https://github.com/{os.environ['GH_REPO']}/blob/{os.environ['RELEASE_TAG']}/"
+          notes = re.sub(r'\]\((?!https?://|#)([^)]+)\)', lambda k: f']({base}{k.group(1)})', notes)
+          open('notes.md', 'w', encoding='utf-8').write(notes)
+          PY
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
+            --verify-tag --title "postbag $RELEASE_TAG" --notes-file notes.md
+
+# Distribution is through GitHub in v1. PyPI requires a separately configured
+# project and trusted publisher; no registry credentials are needed here.

@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "postbag"
+dynamic = ["version"]
+description = "Claude Code and Codex exchange letters, one shared bag. No daemon, no polling, no hooks."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+keywords = ["claude-code", "codex", "agents", "multi-agent", "cli"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "build>=1.2", "twine>=6"]
+
+[project.urls]
+Homepage = "https://github.com/parasxos/postbag"
+Documentation = "https://github.com/parasxos/postbag#readme"
+Issues = "https://github.com/parasxos/postbag/issues"
+Repository = "https://github.com/parasxos/postbag"
+Changelog = "https://github.com/parasxos/postbag/blob/main/CHANGELOG.md"
+
+[project.scripts]
+postbag = "postbag:main"
+
+[tool.setuptools]
+py-modules = ["postbag"]
+
+[tool.setuptools.dynamic]
+version = {attr = "postbag.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["."]
