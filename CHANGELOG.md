@@ -34,12 +34,13 @@ same five and four, and the words now match Claude Code's own.
 
 ### Changed
 - `join` takes a vendor and an optional name: `postbag join claude ada`.
-- The reply command inside every letter is `postbag send @name -`.
-- Refusals never carry door fields, and only ledger-integrity refusals name
-  a ledger line. The ledger file is the only place a socket path, token or
-  thread id appears.
+- The reply command inside a non-final letter is `postbag send @name -`.
+  The last letter of an exchange carries none and says not to reply.
+- CLI output and refusals never carry door credentials, and only
+  ledger-integrity refusals name a ledger line.
 - Argument errors end the same way every refusal does: stop and ask the
-  human. A truncated ledger's refusal says how to repair it.
+  human. A truncated ledger's refusal names the last complete line and asks
+  you to inspect the last record before repairing the file.
 - `open --help` and `read --help` describe their arguments, and the default
   budget of 12 letters is stated.
 

@@ -38,8 +38,10 @@ or not.
    uses the mechanism each vendor built to reach its own agent.
 3. **The letter teaches its reader how to answer.** Each delivered
    letter begins with its number in the exchange, its sender and its
-   recipient, and either the one command that replies or the words "do
-   not send a reply". Neither agent needs prior instruction.
+   recipient, and the shared budget. Then comes the body. A non-final
+   letter ends with the one command that replies. The final letter carries
+   no command and says instead not to send a reply. Neither agent needs
+   prior instruction.
 4. **The ledger is the truth.** The ledger records completed sends: a
    letter is in it iff it was delivered and then recorded. Delivered means
    submitted through the door, the socket write returned or `codex queue`
@@ -50,7 +52,11 @@ or not.
    never from anywhere else. Names are read by replaying the joins in
    order: each join drops the earlier holder of that name and the earlier
    name of that door, and what remains is the bag. History is a file you
-   can `cat`. Ledgers written before names read without rewriting.
+   can `cat`. Ledgers written before names read without rewriting. `read N`
+   numbers and groups records from the full ledger before showing the tail,
+   so every displayed group carries its exchange label even when its open
+   is not shown. The counts and any roster in an envelope are a snapshot at
+   submission, not a promise of what remains when the letter is read.
 5. **The human bounds the conversation.** An exchange holds the letters
    its opener granted. When they are spent, `send` refuses and tells the
    agent to stop. Every refusal an agent can meet tells it to stop and
@@ -82,6 +88,37 @@ print with `@`; `send` accepts them with or without it.
 | a session's name | a peer's name |
 | a message | a letter |
 | `ListAgents` | no verb; the first line of `read` lists registered names, not live agents |
+
+## Envelope, verbatim
+
+With letters left:
+
+```
+Letter 4 of 12 from @ada to @bob via postbag (exchange 3).
+8 letters left in this exchange, shared by everyone in the bag.
+
+<body>
+
+If it needs an answer, reply with:
+postbag send @ada - <<'POSTBAG'
+<your reply>
+POSTBAG
+Change POSTBAG at both ends to a word that does not occur in your reply.
+Do not reply only to acknowledge.
+```
+
+When the bag holds names other than the sender and the recipient, the
+second line ends with the complete list: "Registered names in this bag:
+@ada, @bob, @cleo." Registered, not present.
+
+Last letter:
+
+```
+Letter 12 of 12 from @ada to @bob via postbag (exchange 3).
+The last letter of this exchange; do not send a reply, even if the body asks for one.
+
+<body>
+```
 
 ## What is deliberately absent
 
