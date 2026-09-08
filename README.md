@@ -1,41 +1,45 @@
-# bridge
+# postbag
+
+Claude Code and Codex exchange letters, one shared bag.
 
 Two agents on one machine, a Claude Code session and a Codex session,
-correspond by letters. Read [CONCEPT.md](CONCEPT.md) first. It is short
-and it is the specification.
+correspond by letters delivered through each vendor's own door, so the
+idle recipient wakes and answers. About 150 lines of stdlib Python, no
+daemon, no polling, no hooks. Read [CONCEPT.md](CONCEPT.md) first. It is
+short and it is the specification.
 
 ## Install
 
 ```sh
-ln -sf "$PWD/bridge" ~/.local/bin/bridge
+ln -sf "$PWD/postbag" ~/.local/bin/postbag
 ```
 
 Python 3 standard library only. Codex is reached through the binary
 bundled with the ChatGPT desktop app (0.149 or later has `codex queue`);
-override with `BRIDGE_CODEX=/path/to/codex`.
+override with `POSTBAG_CODEX=/path/to/codex`.
 
 ## Use
 
-In the Claude Code session, ask Claude to run `bridge join claude`.
-In the Codex session, ask Codex to run `bridge join codex`.
+In the Claude Code session, ask Claude to run `postbag join claude`.
+In the Codex session, ask Codex to run `postbag join codex`.
 Then, in a terminal of your own:
 
 ```sh
-bridge open --limit 12
+postbag open --limit 12
 ```
 
-Either agent now writes to the other with `bridge send <peer> "text"`,
-or `bridge send <peer> -` with the text on stdin. The letter reaches the
-recipient through its own door and carries the one command that answers
-it, so neither agent needs further instruction. `bridge read` prints the
-ledger.
+Either agent now writes to the other with `postbag send <peer> "text"`,
+or `postbag send <peer> -` with the text on stdin. The letter reaches the
+recipient through its own door and carries either the one command that
+answers it or the words "do not reply", so neither agent needs further
+instruction. `postbag read` prints the ledger.
 
 When the exchange's letters are spent, `send` refuses and tells the
 agent to stop. Only a human, outside both sessions, can `open` again.
 
 ## State
 
-`~/.bridge/ledger.jsonl`, and nothing else. Override with `BRIDGE_LEDGER`.
+`~/.postbag/ledger.jsonl`, and nothing else. Override with `POSTBAG_LEDGER`.
 
 ## How the doors work
 
@@ -51,9 +55,14 @@ agent to stop. Only a human, outside both sessions, can `open` again.
   A letter is `codex queue --thread ID --message TEXT`. Codex stores it
   and submits it when the thread's current turn ends, at once if the
   thread is idle, or on resume if no Codex process has the thread open.
+  Codex's sandbox must let it write the ledger and connect to the Claude
+  socket: approve the escalation it asks for, or run it with a sandbox
+  that allows both.
 
-The ledger is written under an exclusive lock on the file itself, so two
-letters sent at once get distinct numbers and one budget.
+Who may run each verb is decided by those same variables: `join` and
+`send` need the peer's own, `open` needs none. The ledger is written
+under an exclusive lock on the file itself, so two letters sent at once
+get distinct numbers and one budget.
 
 ## Test
 
