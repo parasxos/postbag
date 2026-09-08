@@ -217,7 +217,7 @@ def send(to, body):
         try:
             write(rec)
         except OSError as e:
-            fail(f"letter {rec['n']} reached {to}'s door but was not recorded ({e}); do not resend before checking {to}'s session")
+            fail(f"letter {rec['n']} was submitted to {to}'s door but not recorded ({e}); do not resend before checking {to}'s session")
     print(f"letter {rec['n']} delivered to {to}, {left - 1} left")
 
 

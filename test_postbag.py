@@ -262,6 +262,6 @@ def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypa
             yield w
 
     monkeypatch.setattr(joined, "ledger", broken)
-    with pytest.raises(SystemExit, match="reached codex's door but was not recorded .disk full.; do not resend"):
+    with pytest.raises(SystemExit, match="was submitted to codex's door but not recorded .disk full.; do not resend"):
         joined.send("codex", "x")
     assert len(joined.KNOCKED) == 1

@@ -42,6 +42,18 @@ jobs:
         run: |
           cd dist
           sha256sum --check SHA256SUMS
+      - name: Take the release notes from the changelog section for this tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, re
+          version = os.environ['RELEASE_TAG'].lstrip('v')
+          text = open('CHANGELOG.md', encoding='utf-8').read()
+          m = re.search(rf'^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)', text, re.M | re.S)
+          assert m, f'CHANGELOG.md has no section for {version}'
+          open('notes.md', 'w', encoding='utf-8').write(m.group(1).strip() + '\n')
+          PY
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,7 +61,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release create "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
-            --verify-tag --title "Postbag $RELEASE_TAG" --notes-file CHANGELOG.md
+            --verify-tag --title "postbag $RELEASE_TAG" --notes-file notes.md
 
 # Distribution is through GitHub in v1. PyPI requires a separately configured
 # project and trusted publisher; no registry credentials are needed here.

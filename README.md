@@ -268,7 +268,7 @@ ones you will meet.
 | Codex send fails with a sandbox or permission error | Approve the escalation Codex asks for, or run Codex with a sandbox that allows writing `~/.postbag` and connecting to the Claude socket. |
 | `ledger line N is not a record` | The ledger was edited or truncated. Fix that line or move the file aside and start fresh. Both agents must `join` again. |
 | `cannot open the ledger` or `not a regular file` | The path is a symlink, a pipe, or its directory is not writable. Check `POSTBAG_LEDGER` and permissions. |
-| `letter N reached codex's door but was not recorded` | The append failed after delivery. Check the recipient session and the ledger before sending again. |
+| `letter N was submitted to codex's door but not recorded` | The append failed after delivery. Check the recipient session and the ledger before sending again. |
 
 ## ❓ FAQ
 
