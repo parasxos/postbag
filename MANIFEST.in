@@ -1,0 +1,3 @@
+include postbag
+include CONCEPT.md CHANGELOG.md SECURITY.md CONTRIBUTING.md
+include test_postbag.py test_hardening.py test_transports.py

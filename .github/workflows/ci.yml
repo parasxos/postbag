@@ -4,6 +4,7 @@ on:
   push:
     branches: ['**']
   pull_request:
+  workflow_dispatch:
   workflow_call:
 
 permissions:
@@ -64,6 +65,15 @@ jobs:
           wheel-install/bin/postbag --help
           sdist-install/bin/postbag --version
           sdist-install/bin/postbag --help
+      - name: Run tests from the source distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/sdist-install/bin/python" -m pip install pytest
+          mkdir "$RUNNER_TEMP/sdist-source"
+          tar -xzf dist/*.tar.gz -C "$RUNNER_TEMP/sdist-source"
+          cd "$RUNNER_TEMP/sdist-source"/postbag-*
+          "$RUNNER_TEMP/sdist-install/bin/python" -m pytest -q
       - name: Create checksums
         run: |
           cd dist
