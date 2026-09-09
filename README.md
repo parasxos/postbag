@@ -8,10 +8,10 @@ in one ledger, and counts against a letter budget that only you can set.
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
 
-![postbag demo: two Claude Code sessions join as ada and bob, you open an exchange of four letters, ada asks bob for a review, bob answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.2.0/docs/assets/demo.gif)
+![postbag demo: two Claude Code sessions join as ada and bob, you open an exchange of four letters, ada asks bob for a review, bob answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.2.1/docs/assets/demo.gif)
 
 *Real commands, real output, fake doors: a temporary home and two throwaway
-sockets, so no session or token is shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.2.0/docs/demo.tape).*
+sockets, so no session or token is shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.2.1/docs/demo.tape).*
 
 Use it for a review of the other agent's diff, to split a task and agree
 the interface by letter, or for a second opinion. Text travels by postbag,
@@ -90,7 +90,7 @@ distinct numbers and one budget. Each `open` starts the next exchange, and its
 budget is shared by everyone in the bag. Two sessions are the supported use,
 three or more is experimental. A bag is one ledger, the only state. No daemon,
 no polling, no hooks, no server, no config file, no bag index.
-[CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.2.0/CONCEPT.md) is the whole specification in a page.
+[CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.2.1/CONCEPT.md) is the whole specification in a page.
 
 ## Security and limits
 
@@ -110,4 +110,4 @@ no polling, no hooks, no server, no config file, no bag index.
   submission and recording leaves a letter in doubt, with no acknowledgements
   or retries. Check the recipient before sending again.
 
-postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v1.2.0/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v1.2.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.2.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v1.2.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.2.0/LICENSE)
+postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v1.2.1/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v1.2.1/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.2.1/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v1.2.1/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.2.1/LICENSE)
