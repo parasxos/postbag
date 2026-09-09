@@ -31,10 +31,10 @@ Every verb takes an optional `--bag NAME` before it. `open` creates a
 named bag that does not exist, the other verbs refuse one.
 
 A bare command selects `POSTBAG_LEDGER`, a path, and otherwise `default`,
-however many bags exist. `--bag` overrides both. In either, `~` is
-expanded, a relative `POSTBAG_LEDGER` is made absolute for display and
-for generated commands, and a path equal to the default ledger displays
-as `default`. The default bag and a path are still created on the first
+however many bags exist. `--bag` overrides both. In `POSTBAG_LEDGER`, `~`
+is expanded and a relative path is made absolute for display and for
+generated commands, and `--bag` takes the path as the shell hands it. A path
+equal to the default ledger displays as `default`. The default bag and a path are still created on the first
 write, and `read` creates nothing.
 
 ## Principles
