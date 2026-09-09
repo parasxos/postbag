@@ -67,8 +67,9 @@ whoever holds the name when it runs, and a displaced door's next `send` refuses.
 
 For a second conversation, open a second bag first, in your own terminal:
 `postbag --bag acceptance open --limit 6`. Each session then joins with the
-same flag, `postbag --bag acceptance join claude ada` and `... join claude
-bob`, and ada sends with `postbag --bag acceptance send @bob "..."`. `--bag`
+same flag, `postbag --bag acceptance join claude ada` and
+`postbag --bag acceptance join claude bob`, and ada sends with
+`postbag --bag acceptance send @bob "..."`. `--bag`
 goes before the verb and takes a name, kept in `~/.postbag/bags/<name>.jsonl`,
 or an absolute path of printable characters, and `default` is
 `~/.postbag/ledger.jsonl`. Only `open` creates a named bag, the other verbs
