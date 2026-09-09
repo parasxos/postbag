@@ -36,21 +36,20 @@ must export `CODEX_SESSION_ID`, and `codex queue --help` must work. Set
 Claude sessions need no Codex binary, two Codex sessions no Claude socket.
 Verified live on macOS: 1.0.2 across Claude Code 2.1.263 and Codex 0.153.4
 from the ChatGPT app, 1.1.0 between two Claude Code 2.1.263 sessions with a
-two-way exchange and the spent-budget refusal. The named bags of 1.2 are not
-yet verified live. Linux passes CI, live delivery is unverified there.
-Windows is unsupported.
+two-way exchange and the spent-budget refusal. Named bags are not yet verified
+live. Linux passes CI, live delivery is unverified there. Windows is unsupported.
 
 ## Quick start
 
-1. Open two sessions on the same machine. Ask each to join under a name,
-   `postbag join claude ada` and `postbag join claude bob`, or
-   `postbag join codex bob` for Codex. A same-vendor pair needs distinct names.
+1. Open two sessions on the same machine. Ask each to join under a name:
+   `postbag --bag default join claude ada`, `postbag --bag default join claude
+   bob`, or `... join codex bob` for Codex. Same-vendor pairs need distinct names.
 2. In a terminal of your own, outside both sessions, run
-   `postbag open --limit 6`. Without `--limit` an exchange holds 12 letters.
+   `postbag --bag default open --limit 6`. An exchange holds 12 by default.
 3. Ask ada to send the first letter:
 
    ```sh
-   postbag send @bob "Review my last commit. Reply with the top three findings."
+   postbag --bag default send @bob "Review my last commit. Reply with the top three findings."
    ```
 
    bob wakes with the letter: "Letter 1 of 6 from @ada to @bob via postbag
@@ -58,44 +57,45 @@ Windows is unsupported.
    one command that answers, `postbag --bag default send @ada -` with the
    reply on stdin. Neither agent needs instructions. The last letter says
    "do not send a reply", and the next `send` refuses and says stop.
-4. Read the bag from anywhere with `postbag read`. Its first line names the
-   bag, the names it holds now and the open exchange, then the records follow.
+4. Read the bag from anywhere with `postbag --bag default read`. Its first
+   line names the bag, its names and the open exchange, then the records.
 
-After a restart, `join` again under the name held. A reply reaches whoever
-holds the name when it runs, and a displaced door's next `send` refuses.
+After a restart, rejoin the same bag under the same name. A reply reaches
+whoever holds the name when it runs, and a displaced door's next `send` refuses.
 
 ## Named bags
 
 For a second conversation, open a second bag first, in your own terminal:
-`postbag --bag acceptance open --limit 6`. Each session then joins with the same
-flag, `postbag --bag acceptance join claude ada` and
-`postbag --bag acceptance join claude bob`, and ada sends with
-`postbag --bag acceptance send @bob "..."`. `--bag` goes before the verb and
-takes a name, kept in `~/.postbag/bags/<name>.jsonl`, or an absolute path free
-of control characters. The default bag is `~/.postbag/ledger.jsonl`. Only `open`
-creates a named bag, the other verbs refuse one that does not exist. Every line
-postbag prints names its bag, and every command inside a letter or a refusal
-carries `--bag`, `--bag default` included, so a reply lands where the letter
-came from whatever the recipient's shell has set. `ls ~/.postbag/bags` lists
-them. Without `--bag`, `POSTBAG_LEDGER` still selects a ledger by path.
+`postbag --bag acceptance open --limit 6`. Each session then joins with the
+same flag, `postbag --bag acceptance join claude ada` and `... join claude
+bob`, and ada sends with `postbag --bag acceptance send @bob "..."`. `--bag`
+goes before the verb and takes a name, kept in `~/.postbag/bags/<name>.jsonl`,
+or an absolute path of printable characters, and `default` is
+`~/.postbag/ledger.jsonl`. Only `open` creates a named bag, the other verbs
+refuse one that does not exist. The default bag and a custom path are created
+on first write, and `read` never creates a file. Each command's output
+identifies the bag, and every command inside a letter or a refusal carries
+`--bag`, `--bag default` included, so a reply lands where the letter came from
+whatever the recipient's shell has set. `ls ~/.postbag/bags` lists them.
+Without `--bag`, `POSTBAG_LEDGER` still selects a ledger by path.
 
 ## Upgrading
 
 Ledgers written by 1.0 and 1.1 read without rewriting, and legacy vendor
 peers read as `@claude` and `@codex`. A 1.1 `send` refuses `--bag`, and every
 1.2 reply command carries it, so scoped commands need 1.2 at both ends, the
-default bag included. Upgrade both, then ask each to `join` again. From an
-older CLI, reach a bag by path: `POSTBAG_LEDGER='/abs/path' postbag send ...`.
+default bag included. Upgrade both, then ask each to `join` again. An older
+CLI reaches a bag by path: `POSTBAG_LEDGER='/abs/path' postbag send ...`.
 
 ## How it works
 
 `join` writes the session's door into the ledger under a name: Claude Code's
 messaging socket and token, or Codex's thread id. `send` knocks on that door,
 then appends the letter under a file lock, so two letters sent at once get
-distinct numbers and one budget. Each `open` starts the next exchange, and
-its budget is shared by everyone in the bag. Two sessions are the supported
-use, three or more is experimental. A bag is one ledger, the only state. No
-daemon, no polling, no hooks, no server, no config file, no bag index.
+distinct numbers and one budget. Each `open` starts the next exchange, and its
+budget is shared by everyone in the bag. Two sessions are the supported use,
+three or more is experimental. A bag is one ledger, the only state. No daemon,
+no polling, no hooks, no server, no config file, no bag index.
 [CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.2.0/CONCEPT.md) is the whole specification in a page.
 
 ## Security and limits

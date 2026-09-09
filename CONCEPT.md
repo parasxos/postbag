@@ -27,12 +27,15 @@ or not.
 | `send @name` | a peer, from inside its own session | knocks on that door, then records the letter |
 | `read` | anyone | prints the ledger, preceded by one line: the names held now and the open exchange |
 
-Every verb takes `--bag NAME` before it. `open` creates a named bag that
-does not exist; the other verbs refuse one.
+Every verb takes an optional `--bag NAME` before it. `open` creates a
+named bag that does not exist, the other verbs refuse one.
 
 A bare command selects `POSTBAG_LEDGER`, a path, and otherwise `default`,
-however many bags exist. `--bag` overrides both. The default bag and a
-path are still created on the first write, and `read` creates nothing.
+however many bags exist. `--bag` overrides both. In either, `~` is
+expanded, a relative `POSTBAG_LEDGER` is made absolute for display and
+for generated commands, and a path equal to the default ledger displays
+as `default`. The default bag and a path are still created on the first
+write, and `read` creates nothing.
 
 ## Principles
 
@@ -87,8 +90,8 @@ holds another, the refusal says so. A door whose name was
 taken learns it at its next `send`, which refuses. A reply command names
 a name, not a door: it reaches whoever holds the name when it runs. Names
 print with `@`; `send` accepts them with or without it. A bag name follows
-the same grammar; `default` is reserved. A bag path must contain no
-control characters.
+the same grammar, and `default` is reserved. A bag path must contain only
+printable characters.
 
 ## The same words as Claude Code
 

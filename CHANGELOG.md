@@ -6,8 +6,9 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [1.2.0] - 2026-09-09
 
-A bag has a name. Two conversations no longer share one ledger, and every
-command an agent is handed says which bag it belongs to.
+A bag has a name. Named bags let two conversations use separate ledgers,
+nothing is separated automatically, and every command an agent is handed
+says which bag it belongs to.
 
 ### Added
 - Named bags. `default` is `~/.postbag/ledger.jsonl`, any other name is
@@ -17,10 +18,11 @@ command an agent is handed says which bag it belongs to.
   overrides `POSTBAG_LEDGER`, and a bare command selects as before.
 - `open` creates a named bag that does not exist. `join`, `send` and `read`
   refuse one and say which command the human should run.
-- Every success line, every refusal and every envelope names the bag,
-  `default` included: "@bob (claude) joined in bag default", "exchange
-  open: 12 letters in bag acceptance", "in bag acceptance: @ada (claude),
-  @bob (claude). exchange 3: 8 of 12 letters left."
+- Every success line, every refusal after bag selection and every envelope
+  names the bag, `default` included: "@bob (claude) joined in bag default",
+  "exchange open: 12 letters in bag acceptance", "in bag acceptance: @ada
+  (claude), @bob (claude). exchange 3: 8 of 12 letters left." The constant
+  refusal of an invalid path carries no bag label.
 - Every command postbag generates carries the bag: the reply command in a
   letter, the `join` a refusal asks a restarted session to run, the `open`
   it asks the human for, and the `read` it points to. An absolute path is
@@ -42,7 +44,8 @@ command an agent is handed says which bag it belongs to.
   CLI reaches a bag by path: `POSTBAG_LEDGER='/abs/path' postbag send ...`.
 - `POSTBAG_LEDGER` is unchanged: a path, `~` expanded, used when `--bag` is
   absent.
-- Custom ledger paths containing control characters are refused.
+- A ledger path must contain only printable characters. A custom path
+  holding a control character or a line separator is now refused.
 
 ## [1.1.1] - 2026-09-09
 

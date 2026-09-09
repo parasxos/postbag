@@ -342,33 +342,65 @@ def test_not_joined_refusal_names_the_bag_once(bag_cli, case):
     )
 
 
-def refused_control_path(cli, args, extra=None):
+UNPRINTABLE = ["\n", "\t", "\x7f", "\x85", "\u2028", "\u2029", "\xa0"]
+VERBS = (("open",), ("join", "codex", "ada"), ("send", "@bob", "hello"), ("read",))
+
+
+def refused_unprintable_path(cli, args, extra=None):
     result = cli.run(*args, peer="ada", extra=extra)
     assert result.returncode == 1
-    assert result.stderr == "postbag: a bag path must not contain control characters; stop and ask the human\n"
+    assert result.stderr == "postbag: a bag path must contain only printable characters; stop and ask the human\n"
     assert not (cli.home / ".postbag").exists() and not cli.capture.exists()
     return result
 
 
-@pytest.mark.parametrize("control", ["\n", "\t", "\x7f"])
-def test_bag_path_with_control_character_refuses_before_any_io(bag_cli, control):
+@pytest.mark.parametrize("character", UNPRINTABLE)
+def test_bag_path_with_unprintable_character_refuses_before_any_io(bag_cli, character):
     cli = bag_cli
-    path = cli.cwd / f"secret-dir{control}tail" / "history.jsonl"
-    for args in (("open",), ("join", "codex", "ada"), ("send", "@bob", "hello"), ("read",)):
-        refused_control_path(cli, ("--bag", str(path), *args))
+    path = cli.cwd / f"secret-dir{character}tail" / "history.jsonl"
+    for args in VERBS:
+        refused_unprintable_path(cli, ("--bag", str(path), *args))
     assert not (cli.cwd / "secret-dir").exists() and not list(cli.cwd.iterdir())
 
 
-def test_environment_path_with_control_character_refuses_unless_overridden(bag_cli):
+@pytest.mark.parametrize("character", UNPRINTABLE)
+def test_environment_path_with_unprintable_character_refuses_unless_overridden(bag_cli, character):
     cli = bag_cli
-    extra = {"POSTBAG_LEDGER": "env-dir\nhistory.jsonl"}
-    for args in (("open",), ("read",)):
-        refused_control_path(cli, args, extra)
+    extra = {"POSTBAG_LEDGER": f"env-dir{character}history.jsonl"}
+    for args in VERBS:
+        refused_unprintable_path(cli, args, extra)
     assert not list(cli.cwd.iterdir())
     assert ok(cli.run("--bag", "acceptance", "open", "--limit", "3", extra=extra)) == (
         "exchange open: 3 letters in bag acceptance\n"
     )
     assert cli.named.is_file() and not list(cli.cwd.iterdir())
+
+
+@pytest.mark.parametrize("character", UNPRINTABLE)
+def test_home_with_unprintable_character_refuses_bare_and_named_commands(bag_cli, character):
+    cli = bag_cli
+    home = cli.cwd / f"ho{character}me"
+    extra = {"HOME": str(home)}
+    for args in VERBS:
+        refused_unprintable_path(cli, args, extra)
+        refused_unprintable_path(cli, ("--bag", "acceptance", *args), extra)
+    assert not home.exists() and not list(cli.cwd.iterdir())
+    elsewhere = cli.cwd / "elsewhere.jsonl"
+    assert ok(cli.run("--bag", str(elsewhere), "open", "--limit", "3", extra=extra)) == (
+        f"exchange open: 3 letters in bag {elsewhere}\n"
+    )
+    assert elsewhere.is_file() and not home.exists()
+
+
+def test_printable_unicode_and_spaces_stay_allowed_in_every_selector(bag_cli):
+    cli = bag_cli
+    home = cli.cwd / "ho me ü"
+    home.mkdir()
+    assert ok(cli.run("read", extra={"HOME": str(home)})) == "in bag default: none. no open exchange.\n"
+    path = cli.cwd / "ada's bags" / "über one.jsonl"
+    assert ok(cli.run("read", extra={"POSTBAG_LEDGER": str(path)})) == f"in bag {path}: none. no open exchange.\n"
+    assert ok(cli.run("--bag", str(path), "read")) == f"in bag {path}: none. no open exchange.\n"
+    assert not path.parent.exists()
 
 
 def test_bag_path_with_space_and_apostrophe_is_allowed_and_quoted(bag_cli):

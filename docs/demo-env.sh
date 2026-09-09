@@ -1,4 +1,6 @@
-# Fake doors for the README demo. Source this in a shell, then run postbag.
+# Fake doors for the README demo. Source this in a disposable shell, as vhs
+# provides, then run postbag. It replaces HOME and unsets the session
+# variables, so do not source it in an interactive shell you keep using.
 # Nothing here touches a real session or your own bags: HOME is a temporary
 # directory, so the default bag lives there, and each Claude door is a
 # throwaway socket that accepts a connection and drops it.
