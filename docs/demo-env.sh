@@ -1,12 +1,13 @@
 # Fake doors for the README demo. Source this in a shell, then run postbag.
-# Nothing here touches a real session: the ledger is temporary and each
-# Claude door is a throwaway socket that accepts a connection and drops it.
-unset CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CODEX_SESSION_ID
+# Nothing here touches a real session or your own bags: HOME is a temporary
+# directory, so the default bag lives there, and each Claude door is a
+# throwaway socket that accepts a connection and drops it.
+unset CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CODEX_SESSION_ID POSTBAG_LEDGER
 PS1='$ '
 PATH="$PWD:$PATH"   # run the checkout being documented
 DEMO=$(mktemp -d)
 trap 'kill $LISTENERS 2>/dev/null; rm -rf "$DEMO"' EXIT
-export POSTBAG_LEDGER="$DEMO/ledger.jsonl"
+export HOME="$DEMO"
 LISTENERS=
 for door in ada bob; do
 python3 - "$DEMO/$door.sock" <<'PY' &

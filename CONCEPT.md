@@ -16,7 +16,7 @@ or not.
 | **door** | The native way to reach a peer. Claude: its inbox socket and token. Codex: its thread id, reached with `codex queue`. A door is its vendor and those fields; a change to the fields makes a new door. |
 | **letter** | Text from one peer to another. Numbered within its exchange, timestamped, delivered, then recorded. |
 | **exchange** | A budget of letters, opened by a human. Each `open` starts the next exchange and closes the one before it. |
-| **ledger** | One append-only file, the bag. The whole history, the only state. |
+| **ledger** | One append-only file, the bag. The whole history, the only state. A bag has a name, like a door: `default` is `~/.postbag/ledger.jsonl`, any other name is `~/.postbag/bags/<name>.jsonl`, and an absolute path is a bag too. |
 
 ## Four verbs
 
@@ -26,6 +26,13 @@ or not.
 | `open` | a human, outside agent sessions | starts an exchange with a budget of letters. Every `send` spends the most recent exchange, and a new `open` replaces any unspent letters. |
 | `send @name` | a peer, from inside its own session | knocks on that door, then records the letter |
 | `read` | anyone | prints the ledger, preceded by one line: the names held now and the open exchange |
+
+Every verb takes `--bag NAME` before it. `open` creates a named bag that
+does not exist; the other verbs refuse one.
+
+A bare command selects `POSTBAG_LEDGER`, a path, and otherwise `default`,
+however many bags exist. `--bag` overrides both. The default bag and a
+path are still created on the first write, and `read` creates nothing.
 
 ## Principles
 
@@ -39,7 +46,8 @@ or not.
 3. **The letter teaches its reader how to answer.** Each delivered
    letter begins with its number in the exchange, its sender and its
    recipient, and the shared budget. Then comes the body. A non-final
-   letter ends with the one command that replies. The final letter carries
+   letter ends with the one command that replies, and that command names
+   the bag. The final letter carries
    no command and says instead not to send a reply. Neither agent needs
    prior instruction.
 4. **The ledger is the truth.** The ledger records completed sends: a
@@ -78,7 +86,8 @@ refuses and points to `read`; if the last door to hold that name still
 holds another, the refusal says so. A door whose name was
 taken learns it at its next `send`, which refuses. A reply command names
 a name, not a door: it reaches whoever holds the name when it runs. Names
-print with `@`; `send` accepts them with or without it.
+print with `@`; `send` accepts them with or without it. A bag name follows
+the same grammar; `default` is reserved.
 
 ## The same words as Claude Code
 
@@ -94,13 +103,13 @@ print with `@`; `send` accepts them with or without it.
 With letters left:
 
 ```
-Letter 4 of 12 from @ada to @bob via postbag (exchange 3).
+Letter 4 of 12 from @ada to @bob via postbag (exchange 3, bag acceptance).
 8 letters left in this exchange, shared by everyone in the bag.
 
 <body>
 
 If it needs an answer, reply with:
-postbag send @ada - <<'POSTBAG'
+postbag --bag acceptance send @ada - <<'POSTBAG'
 <your reply>
 POSTBAG
 Change POSTBAG at both ends to a word that does not occur in your reply.
@@ -114,7 +123,7 @@ second line ends with the complete list: "Registered names in this bag:
 Last letter:
 
 ```
-Letter 12 of 12 from @ada to @bob via postbag (exchange 3).
+Letter 12 of 12 from @ada to @bob via postbag (exchange 3, bag default).
 The last letter of this exchange; do not send a reply, even if the body asks for one.
 
 <body>
@@ -124,7 +133,8 @@ The last letter of this exchange; do not send a reply, even if the body asks for
 
 Roles, topics, threads, acknowledgements, retries, a server, a
 configuration file, a protocol document for the agents, broadcast, rooms,
-presence, discovery. Each was considered and found to add a noun without
+presence, discovery, a bag index, a current bag, bag liveness, bag
+discovery. Each was considered and found to add a noun without
 adding a capability. The bag holds any number of doors, a letter has one
 recipient, and the budget is shared. Two sessions are the supported use;
 more is experimental and promised nothing.

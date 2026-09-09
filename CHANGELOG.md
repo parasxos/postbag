@@ -4,6 +4,45 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-09-09
+
+A bag has a name. Two conversations no longer share one ledger, and every
+command an agent is handed says which bag it belongs to.
+
+### Added
+- Named bags. `default` is `~/.postbag/ledger.jsonl`, any other name is
+  `~/.postbag/bags/<name>.jsonl`, and an absolute path is a bag too. A bag
+  name follows the peer name grammar, and `default` is reserved.
+- `--bag NAME` before every verb: `postbag --bag acceptance read`. It
+  overrides `POSTBAG_LEDGER`, and a bare command selects as before.
+- `open` creates a named bag that does not exist. `join`, `send` and `read`
+  refuse one and say which command the human should run.
+- Every success line, every refusal and every envelope names the bag,
+  `default` included: "@bob (claude) joined in bag default", "exchange
+  open: 12 letters in bag acceptance", "in bag acceptance: @ada (claude),
+  @bob (claude). exchange 3: 8 of 12 letters left."
+- Every command postbag generates carries the bag: the reply command in a
+  letter, the `join` a refusal asks a restarted session to run, the `open`
+  it asks the human for, and the `read` it points to. An absolute path is
+  single-quoted for the shell.
+
+### Changed
+- The envelope's first line is "Letter 4 of 12 from @ada to @bob via
+  postbag (exchange 3, bag acceptance)", for the last letter too.
+- The reply command inside a non-final letter is
+  `postbag --bag acceptance send @ada -`.
+- `join`, `open`, `send` and `read` name the bag on their first line:
+  "letter 4 of 12 in exchange 3 delivered to @bob in bag acceptance, 8 left".
+
+### Compatibility
+- The ledger format is unchanged. Old ledgers read without rewriting, and
+  no version gate was added.
+- A 1.1 `send` refuses `--bag`, which every 1.2 reply command carries, so
+  scoped commands need 1.2 at both ends, the default bag included. An older
+  CLI reaches a bag by path: `POSTBAG_LEDGER='/abs/path' postbag send ...`.
+- `POSTBAG_LEDGER` is unchanged: a path, `~` expanded, used when `--bag` is
+  absent.
+
 ## [1.1.1] - 2026-09-09
 
 ### Fixed
@@ -126,6 +165,7 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
+[1.2.0]: https://github.com/parasxos/postbag/releases/tag/v1.2.0
 [1.1.1]: https://github.com/parasxos/postbag/releases/tag/v1.1.1
 [1.1.0]: https://github.com/parasxos/postbag/releases/tag/v1.1.0
 [1.0.2]: https://github.com/parasxos/postbag/releases/tag/v1.0.2
