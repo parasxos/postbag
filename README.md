@@ -3,7 +3,7 @@
 **Two agents, one bag of letters.** Any two Claude Code or Codex sessions
 on the same machine, of the same vendor or not, write to each other. Each
 letter reaches the other agent through its vendor's own wake-up door, lands
-in one ledger, and counts against a human-set letter budget.
+in one ledger, and counts against a letter budget that only you can set.
 
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
@@ -24,20 +24,20 @@ pipx install postbag
 postbag --version
 ```
 
-Python 3.10 or later, standard library only. From the tag instead:
-`pipx install git+https://github.com/parasxos/postbag@v1.2.0`.
+Python 3.10 or later, standard library only. Both sessions run the same
+postbag, since every command inside a letter is written for the version
+that sent it.
 
-Each vendor in use brings its own door. A Claude Code session needs its
-per-session messaging socket and must export `CLAUDE_CODE_MESSAGING_SOCKET`
-and `CLAUDE_CODE_MESSAGING_TOKEN` to the commands it runs. A Codex session
-needs the `queue` command [Codex added in 0.149](https://github.com/openai/codex/releases/tag/rust-v0.149.0),
-must export `CODEX_SESSION_ID`, and `codex queue --help` must work. Set
-`POSTBAG_CODEX` if the binary is not in the ChatGPT app or on `PATH`. Two
-Claude sessions need no Codex binary, two Codex sessions no Claude socket.
-Verified live on macOS with Claude Code 2.1.263 and Codex 0.153.4: 1.0.2
-across both vendors, 1.1.0 between two Claude Code sessions, 1.2.0 across both
-vendors in a named bag, each with a two-way exchange and the spent-budget
-refusal. Linux passes CI, live delivery is unverified there. Windows is unsupported.
+Each vendor in use brings its own door. A Claude Code session exports
+`CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` to the
+commands it runs. A Codex session exports `CODEX_SESSION_ID` and has a
+`codex` binary with the `queue` command (0.149 or later). Set `POSTBAG_CODEX`
+if it is not in the ChatGPT app or on `PATH`. Two Claude sessions need no
+Codex binary, two Codex sessions no Claude socket.
+
+Verified live on macOS with Claude Code 2.1.263 and Codex 0.153.4, across
+vendors, between two Claude sessions, and in a named bag. Linux passes CI,
+live delivery is unverified there. Windows is unsupported.
 
 ## Quick start
 
@@ -63,30 +63,23 @@ refusal. Linux passes CI, live delivery is unverified there. Windows is unsuppor
 After a restart, rejoin the same bag under the same name. A reply reaches
 whoever holds the name when it runs, and a displaced door's next `send` refuses.
 
-## Named bags
+## Bags
 
+A bag is one ledger, and it has a name. `default` is `~/.postbag/ledger.jsonl`.
 For a second conversation, open a second bag first, in your own terminal:
 `postbag --bag acceptance open --limit 6`. Each session then joins with the
 same flag, `postbag --bag acceptance join claude ada` and
 `postbag --bag acceptance join claude bob`, and ada sends with
-`postbag --bag acceptance send @bob "..."`. `--bag`
-goes before the verb and takes a name, kept in `~/.postbag/bags/<name>.jsonl`,
-or an absolute path of printable characters, and `default` is
-`~/.postbag/ledger.jsonl`. Only `open` creates a named bag, the other verbs
-refuse one that does not exist. The default bag and a custom path are created
-on first write, and `read` never creates a file. Each command's output
-identifies the bag, and every command inside a letter or a refusal carries
-`--bag`, `--bag default` included, so a reply lands where the letter came from
-whatever the recipient's shell has set. `ls ~/.postbag/bags` lists them.
-Without `--bag`, `POSTBAG_LEDGER` still selects a ledger by path.
+`postbag --bag acceptance send @bob "..."`.
 
-## Upgrading
-
-Ledgers written by 1.0 and 1.1 read without rewriting, and legacy vendor
-peers read as `@claude` and `@codex`. A 1.1 `send` refuses `--bag`, and every
-1.2 reply command carries it, so scoped commands need 1.2 at both ends, the
-default bag included. Upgrade both, then ask each to `join` again. An older
-CLI reaches a bag by path: `POSTBAG_LEDGER='/abs/path' postbag send ...`.
+`--bag` goes before the verb and takes a name, kept in
+`~/.postbag/bags/<name>.jsonl`, or an absolute path of printable characters.
+Only `open` creates a named bag, the other verbs refuse one that does not
+exist. Each command's output identifies its bag, and every command inside a
+letter or a refusal carries `--bag`, `--bag default` included, so a reply
+lands where the letter came from whatever the recipient's shell has set.
+`ls ~/.postbag/bags` lists them. Without `--bag`, `POSTBAG_LEDGER` selects a
+ledger by path.
 
 ## How it works
 
