@@ -4,7 +4,7 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] - 2026-09-08
+## [1.1.0] - 2026-09-09
 
 Any two sessions, of the same vendor or not. The nouns and verbs are the
 same five and four, and the words now match Claude Code's own.
