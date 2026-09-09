@@ -4,6 +4,15 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-09-09
+
+Documentation release. No runtime change beyond the version number.
+
+### Changed
+- The README is a manual again: the upgrade notes and the release-by-release
+  verification history moved out, this file keeps them. One sentence remains,
+  both sessions run the same postbag.
+
 ## [1.2.0] - 2026-09-09
 
 A bag has a name. Named bags let two conversations use separate ledgers,
@@ -169,6 +178,7 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
+[1.2.1]: https://github.com/parasxos/postbag/releases/tag/v1.2.1
 [1.2.0]: https://github.com/parasxos/postbag/releases/tag/v1.2.0
 [1.1.1]: https://github.com/parasxos/postbag/releases/tag/v1.1.1
 [1.1.0]: https://github.com/parasxos/postbag/releases/tag/v1.1.0
