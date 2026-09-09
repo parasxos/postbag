@@ -11,15 +11,18 @@ same user. A name is an address, not authentication.
 
 ## What the ledger holds
 
-`~/.postbag/ledger.jsonl` holds every letter body and every registered door:
-each Codex thread id, and each Claude messaging socket path and session
-token. Several doors of one vendor can be registered. Writes keep the file
-`0600` and new state directories `0700`. An existing custom directory, set
-through `POSTBAG_LEDGER`, is left alone. Anyone who can read that file can
-write user turns into any registered Claude session while it runs.
+Each selected bag, `~/.postbag/ledger.jsonl` by default, a named bag under
+`~/.postbag/bags`, or a custom path from `--bag` or `POSTBAG_LEDGER`, holds
+every letter body and every registered door: each Codex thread id, and each
+Claude messaging socket path and session token. Several doors of one vendor
+can be registered. Writes keep the file `0600` and new state directories
+`0700`. An existing directory is left alone, whichever selector chose it.
+Anyone who can read that file can write user turns into any registered
+Claude session while it runs.
 
-`postbag read` never prints door fields. `cat` does. Keep the ledger out of
-git, issues, logs and screenshots.
+`postbag read` hides door credentials and prints each name's vendor on
+purpose. `cat` hides nothing. Keep the ledger out of git, issues, logs and
+screenshots.
 
 ## What a letter can do
 

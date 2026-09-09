@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from test_postbag import bag
+from test_postbag import bag, expected_bag_command, expected_bag_label
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def test_rename_releases_old_name_and_points_recipient_to_new_name(bag, session,
     capsys.readouterr()
     bag.join("codex", "cleo")
     announcement = capsys.readouterr().out
-    assert announcement == "@cleo (codex) joined, renamed from @ada\n"
+    assert announcement == f"@cleo (codex) joined in bag {expected_bag_label()}, renamed from @ada\n"
     assert bag.door("cleo")["thread"] == ada["thread"]
     refused_without_effect(bag, lambda: bag.door("ada"))
 
@@ -102,7 +102,7 @@ def test_name_takeover_displaces_sender_and_reroutes_replies(bag, session, capsy
     capsys.readouterr()
     replacement = register(bag, session, "codex", "three", "ada")
     first = bag.records()[0]
-    assert capsys.readouterr().out == f"@ada (codex) joined, taken from the codex door that joined at {first['at']}\n"
+    assert capsys.readouterr().out == f"@ada (codex) joined in bag {expected_bag_label()}, taken from the codex door that joined at {first['at']}\n"
 
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "displaced sender"))
@@ -180,7 +180,7 @@ def test_sender_must_have_joined_even_with_complete_vendor_environment(bag, sess
     exchange(bag, session)
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "not registered"))
-    assert "this session has not joined, run postbag join codex" in error
+    assert f"this session has not joined, run {expected_bag_command('join codex')}" in error
 
 
 def test_a_displaced_sender_whose_name_nobody_holds_learns_it_was_released(bag, session):
@@ -223,7 +223,7 @@ def test_a_shell_inside_two_unjoined_sessions_is_told_both_joins(bag, session, m
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/postbag-test-nine.sock")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "fake-token-nine")
     error = refused_without_effect(bag, lambda: bag.send("bob", "unjoined"))
-    assert "run postbag join claude or postbag join codex" in error
+    assert f"run {expected_bag_command('join claude')} or {expected_bag_command('join codex')}" in error
 
 
 def test_two_matching_vendor_identities_refuse_instead_of_picking_one(bag, session, monkeypatch):
@@ -369,7 +369,7 @@ def test_every_refusal_and_announcement_carries_only_the_stop_suffix_semicolon(b
     register(bag, session, "codex", "three", "ada")
     capsys.readouterr()
     register(bag, session, "codex", "three", "cleo")
-    assert capsys.readouterr().out == "@cleo (codex) joined, renamed from @ada\n"
+    assert capsys.readouterr().out == f"@cleo (codex) joined in bag {expected_bag_label()}, renamed from @ada\n"
     session("claude", "two")
     refusals = [refused_without_effect(bag, lambda: bag.send("ada", "to a released name"))]
     session("codex", "one")
@@ -378,7 +378,7 @@ def test_every_refusal_and_announcement_carries_only_the_stop_suffix_semicolon(b
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/postbag-test-two.sock")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "fake-token-two")
     refusals.append(refused_without_effect(bag, lambda: bag.send("ada", "two doors in one shell")))
-    assert "@ada is not registered, its last door now holds @cleo, run postbag read" in refusals[0]
+    assert f"@ada is not registered, its last door now holds @cleo, run {expected_bag_command('read')}" in refusals[0]
     assert "matches multiple registered names, send from one session" in refusals[2]
     for refusal in refusals:
         assert refusal.count(";") == 1 and refusal.endswith("; stop and ask the human")

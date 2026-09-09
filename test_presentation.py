@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from test_postbag import bag, be, joined  # noqa: F401 -- shared pytest fixtures
+from test_postbag import bag, be, joined, expected_bag_command, expected_bag_label  # noqa: F401 -- shared pytest fixtures
 
 
 @pytest.fixture
@@ -26,7 +26,9 @@ def open_as_human(bag, be, limit):
 def read_output(bag, capsys, count=None):
     capsys.readouterr()
     bag.read(count)
-    return capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert output.startswith(f"in bag {expected_bag_label()}: ")
+    return output
 
 
 def ledger_lines(output):
@@ -51,11 +53,11 @@ def test_envelope_numbers_letters_within_exchange_and_puts_reply_after_body(pair
     vendor, door, delivered = pair.KNOCKED[-1]
     assert vendor == "codex" and door["thread"] == "t-1"
     assert delivered == (
-        "Letter 4 of 12 from @ada to @bob via postbag (exchange 3).\n"
+        f"Letter 4 of 12 from @ada to @bob via postbag (exchange 3, bag {expected_bag_label()}).\n"
         "8 letters left in this exchange, shared by everyone in the bag.\n\n"
         f"{body}\n\n"
         "If it needs an answer, reply with:\n"
-        "postbag send @ada - <<'POSTBAG'\n"
+        f"{expected_bag_command('send @ada')} - <<'POSTBAG'\n"
         "<your reply>\n"
         "POSTBAG\n"
         "Change POSTBAG at both ends to a word that does not occur in your reply.\n"
@@ -70,11 +72,11 @@ def test_final_envelope_forbids_reply_even_when_the_body_requests_one(pair, be):
     pair.send("bob", body)
     delivered = pair.KNOCKED[-1][2]
     assert delivered == (
-        "Letter 1 of 1 from @ada to @bob via postbag (exchange 1).\n"
+        f"Letter 1 of 1 from @ada to @bob via postbag (exchange 1, bag {expected_bag_label()}).\n"
         "The last letter of this exchange; do not send a reply, even if the body asks for one.\n\n"
         f"{body}"
     )
-    assert "postbag send" not in delivered
+    assert "postbag --bag" not in delivered
     assert pair.budget() == 0
 
 
@@ -94,7 +96,7 @@ def test_new_open_replaces_unspent_budget_and_restarts_letter_numbering(pair, be
     assert pair.budget() == 2
     pair.send("bob", "The new first letter.")
     assert pair.KNOCKED[-1][2].startswith(
-        "Letter 1 of 2 from @ada to @bob via postbag (exchange 2).\n"
+        f"Letter 1 of 2 from @ada to @bob via postbag (exchange 2, bag {expected_bag_label()}).\n"
     )
     pair.send("bob", "The new last letter.")
     assert pair.budget() == 0
@@ -113,7 +115,7 @@ def test_joins_do_not_consume_letter_numbers_or_budget(pair, be):
     assert pair.budget() == 2
     pair.send("@bee", "Second after two joins.")
     assert pair.KNOCKED[-1][2].startswith(
-        "Letter 2 of 3 from @ada to @bee via postbag (exchange 1).\n"
+        f"Letter 2 of 3 from @ada to @bee via postbag (exchange 1, bag {expected_bag_label()}).\n"
     )
     assert pair.budget() == 1
 
@@ -178,7 +180,7 @@ def test_read_names_a_taken_door_by_ledger_line_and_join_by_timestamp(pair, be, 
     capsys.readouterr()
     pair.join("codex", "bob")
     first = pair.records()[1]
-    assert capsys.readouterr().out == f"@bob (codex) joined, taken from the codex door that joined at {first['at']}\n"
+    assert capsys.readouterr().out == f"@bob (codex) joined in bag {expected_bag_label()}, taken from the codex door that joined at {first['at']}\n"
     output = read_output(pair, capsys)
     assert "join   @bob (codex), taken from the door that joined at line 2" in output
     assert "joined at 2026" not in output
@@ -241,7 +243,7 @@ def test_three_registered_peers_share_budget_and_are_labelled_experimental(
     be("claude")
     pair.send("bob", "First sender.")
     first = pair.KNOCKED[-1][2].splitlines()
-    assert first[0] == "Letter 1 of 3 from @ada to @bob via postbag (exchange 1)."
+    assert first[0] == f"Letter 1 of 3 from @ada to @bob via postbag (exchange 1, bag {expected_bag_label()})."
     assert first[1] == (
         "2 letters left in this exchange, shared by everyone in the bag. "
         "Registered names in this bag: @ada, @bob, @cleo."
@@ -250,7 +252,7 @@ def test_three_registered_peers_share_budget_and_are_labelled_experimental(
     pair.send("cleo", "Second sender, same budget.")
     assert pair.KNOCKED[-1][0] == "claude"
     assert pair.KNOCKED[-1][2].startswith(
-        "Letter 2 of 3 from @bob to @cleo via postbag (exchange 1).\n"
+        f"Letter 2 of 3 from @bob to @cleo via postbag (exchange 1, bag {expected_bag_label()}).\n"
     )
     assert pair.budget() == 1
 
@@ -263,7 +265,7 @@ def test_final_envelope_keeps_three_peer_roster_without_reply_command(pair, be, 
     pair.join("claude", "cleo")
     pair.send("ada", "The final message.")
     assert pair.KNOCKED[-1][2] == (
-        "Letter 1 of 1 from @cleo to @ada via postbag (exchange 1).\n"
+        f"Letter 1 of 1 from @cleo to @ada via postbag (exchange 1, bag {expected_bag_label()}).\n"
         "The last letter of this exchange; do not send a reply, even if the body asks for one. "
         "Registered names in this bag: @ada, @bob, @cleo.\n\n"
         "The final message."
@@ -302,7 +304,7 @@ def test_read_prints_the_spec_shape_header_and_letter_rows(pair, be, capsys):
     at = pair.records()[-1]["at"]
     output = read_output(pair, capsys)
     lines = output.splitlines()
-    assert lines[0] == "in this bag: @ada (claude), @bob (codex). exchange 1: 11 of 12 letters left."
+    assert lines[0] == f"in bag {expected_bag_label()}: @ada (claude), @bob (codex). exchange 1: 11 of 12 letters left."
     assert lines[-2] == f"   4  {at}  1/12   @ada -> @bob"
     assert lines[-1] == "      Review parser.py, top three findings please."
     assert not re.search(r"^\s*\d+\s+\S+\s+letter\b", output, re.M)

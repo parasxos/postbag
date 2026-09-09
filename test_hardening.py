@@ -139,7 +139,7 @@ def test_read_can_be_piped_to_head(cli):
         _, stderr = producer.communicate(timeout=10)
 
     assert consumer.returncode == producer.returncode == 0, stderr
-    assert consumer.stdout == "in this bag: none. exchange 1: 0 of 400 letters left.\n"
+    assert consumer.stdout == f"in bag {cli.ledger}: none. exchange 1: 0 of 400 letters left.\n"
     assert consumer.stderr == stderr == ""
     assert cli.ledger.read_bytes() == original
 
@@ -268,7 +268,7 @@ def test_claude_door_sends_auth_and_user_records_over_a_real_socket(cli, same_ve
     assert wire[1]["message"]["role"] == "user"
     content = wire[1]["message"]["content"]
     assert content.startswith(
-        f"Letter 1 of 1 from @{sender_name} to @{recipient_name} via postbag (exchange 1).\n"
+        f"Letter 1 of 1 from @{sender_name} to @{recipient_name} via postbag (exchange 1, bag {cli.ledger}).\n"
     )
     assert "do not send a reply" in content
     assert content.endswith(body)
@@ -293,7 +293,7 @@ def test_closed_named_claude_socket_does_not_record_or_spend_a_letter(cli):
     assert result.returncode != 0
     assert "@bob" in result.stderr
     assert "door did not answer" in result.stderr
-    assert "postbag join claude bob" in result.stderr
+    assert f"postbag --bag '{cli.ledger}' join claude bob" in result.stderr
     assert "stop and ask the human" in result.stderr
     assert "Traceback" not in result.stderr
     assert cli.ledger.read_bytes() == before
@@ -315,10 +315,10 @@ def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex, same_vendor
     content = calls[0][4]
     sender_name, recipient_name = ("ada", "bob") if same_vendor else ("claude", "codex")
     assert content.startswith(
-        f"Letter 1 of 2 from @{sender_name} to @{recipient_name} via postbag (exchange 1).\n"
+        f"Letter 1 of 2 from @{sender_name} to @{recipient_name} via postbag (exchange 1, bag {cli.ledger}).\n"
     )
     assert f"\n\n{body}\n\nIf it needs an answer, reply with:\n" in content
-    assert f"postbag send @{sender_name} - <<'POSTBAG'" in content
+    assert f"postbag --bag '{cli.ledger}' send @{sender_name} - <<'POSTBAG'" in content
     assert rows(cli.ledger)[-1]["body"] == body
 
 
@@ -383,7 +383,7 @@ def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake
     for number, (letter, call) in enumerate(zip(letters, calls), 1):
         assert call[-1].startswith(
             f"Letter {number} of {limit} from @{letter['from']} to @{letter['to']} "
-            "via postbag (exchange 1).\n"
+            f"via postbag (exchange 1, bag {cli.ledger}).\n"
         )
         if same_vendor:
             expected_thread = (sender_extra["CODEX_SESSION_ID"] if letter["to"] == "ada"

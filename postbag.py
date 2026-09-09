@@ -1,5 +1,6 @@
 """postbag: any two sessions correspond by letters. See CONCEPT.md.
 
+    postbag [--bag NAME] <verb>   # select a named bag or an absolute ledger path
     postbag join claude|codex [name]  # inside that session: register its named door
     postbag open [--limit N]      # a human opens one shared letter budget
     postbag send @bob "text"      # send from this session's registered name; "-" reads stdin
@@ -16,10 +17,11 @@ import stat
 import subprocess
 import sys
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
@@ -30,8 +32,53 @@ SESSION = {  # door field -> the variable each vendor exports inside its own ses
 MACOS_CODEX = "/Applications/ChatGPT.app/Contents/Resources/codex"
 
 
+_selection = ContextVar("postbag_selection", default=None)
+
+
+class Bag:
+    """One invocation's selected ledger; no selection is persisted outside the process."""
+
+    def __init__(self, selector=None):
+        default = Path.home() / ".postbag" / "ledger.jsonl"
+        self.named = selector is not None and selector != "default" and valid_name(selector)
+        if selector is None:
+            path = os.environ.get("POSTBAG_LEDGER", str(default))
+        elif selector == "default":
+            path = default
+        elif self.named:
+            path = default.parent / "bags" / f"{selector}.jsonl"
+        elif selector.startswith("/"):
+            path = selector
+        else:
+            fail("a bag is a name or an absolute path", context=False)
+        # Do not resolve symlinks: the ledger opener must still refuse them.
+        try:
+            self.path = Path(path).expanduser().absolute()
+        except (OSError, RuntimeError, ValueError) as e:
+            fail(f"cannot select the ledger ({e})", context=False)
+        if not str(self.path).isprintable():  # a control or separator would split every line that prints it
+            fail("a bag path must contain only printable characters", context=False)
+        self.label = selector if self.named else "default" if self.path == default else str(self.path)
+        self.argument = (self.label if self.named or self.label == "default"
+                         else "'" + str(self.path).replace("'", "'\\''") + "'")
+
+    def command(self, words):
+        return f"postbag --bag {self.argument} {words}"
+
+    def missing(self):
+        fail(f"bag {self.label} does not exist, ask the human to run: {self.command('open')}")
+
+    def require_existing(self):
+        if self.named and not self.path.exists():
+            self.missing()
+
+
+def bag():
+    return _selection.get() or Bag()
+
+
 def ledger_path():
-    return Path(os.environ.get("POSTBAG_LEDGER", "~/.postbag/ledger.jsonl")).expanduser()
+    return bag().path
 
 
 def codex_path():
@@ -42,8 +89,9 @@ def codex_path():
     return shutil.which("codex") or "codex"
 
 
-def fail(why):
-    sys.exit(f"postbag: {why}; stop and ask the human")
+def fail(why, *, context=True):
+    prefix = f"in bag {bag().label}: " if context else ""
+    sys.exit(f"postbag: {prefix}{why}; stop and ask the human")
 
 
 def valid_name(value):
@@ -112,9 +160,13 @@ def records():
     if _held is not None:
         _held.seek(0)
         text = _held.read()
-    elif path.exists():
+    else:
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            if bag().named:
+                bag().missing()
+            return []
         except OSError as e:
             fail(f"cannot open the ledger ({e})")
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -123,8 +175,6 @@ def records():
         with os.fdopen(fd, encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_SH)
             text = f.read()
-    else:
-        return []
     if text and not text.endswith("\n"):
         fail(f"ledger is truncated after line {text.count(chr(10))}, inspect its last record before repairing it ({path})")
     lines = text.splitlines()
@@ -145,13 +195,27 @@ def record(kind, **fields):
 
 
 @contextmanager
-def ledger():
+def ledger(create=False):
     """The ledger held exclusively and made private; yields the function that appends one record."""
     global _held
     path = ledger_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        creating = create or not bag().named
+        if creating:
+            # mkdir(parents=True) does not apply mode to intermediate directories.
+            missing = []
+            parent = path.parent
+            while not parent.exists():
+                missing.append(parent)
+                parent = parent.parent
+            for parent in reversed(missing):
+                parent.mkdir(mode=0o700, exist_ok=True)
+        flags = os.O_RDWR | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK
+        fd = os.open(path, flags | (os.O_CREAT if creating else 0), 0o600)
+    except FileNotFoundError as e:
+        if bag().named and not creating:
+            bag().missing()
+        fail(f"cannot open the ledger ({e})")
     except OSError as e:
         fail(f"cannot open the ledger ({e})")
     if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -228,7 +292,8 @@ class Snapshot:
             mine = self.joins(key)
             if mine:
                 fail(f"your name @{mine[-1]['peer']} {self.lost(mine[-1])}")
-        fail("this session has not joined, run " + " or ".join(f"postbag join {source}" for source in keys))
+        fail("this session has not joined, run " + " or ".join(
+            bag().command(f"join {source}") for source in keys))
 
     def lost(self, mine):
         """Where this door's last name went: taken by a door that holds it, or released since."""
@@ -248,7 +313,7 @@ class Snapshot:
         successor = next((n for n, r in self.peers.items()
                           if old is not None and identity(r) == identity(old)), None)
         hint = f", its last door now holds @{successor}" if successor else ""
-        fail(f"@{peer} is not registered{hint}, run postbag read")
+        fail(f"@{peer} is not registered{hint}, run {bag().command('read')}")
 
 
 def where(rec):
@@ -300,14 +365,15 @@ KNOCK = {"claude": knock_claude, "codex": knock_codex}
 def envelope(rec, state):
     number, left = state.sent + 1, state.left - 1
     heading = (f"Letter {number} of {state.limit} from @{rec['from']} to @{rec['to']} "
-               f"via postbag (exchange {state.exchange}).")
+               f"via postbag (exchange {state.exchange}, bag {bag().label}).")
     status = (f"{left} letter{'s' if left != 1 else ''} left in this exchange, shared by everyone in the bag."
               if left else "The last letter of this exchange; do not send a reply, even if the body asks for one.")
     if len(state.peers) > 2:
         status += " Registered names in this bag: " + ", ".join(f"@{p}" for p in sorted(state.peers)) + "."
     text = f"{heading}\n{status}\n\n{rec['body']}"
     if left:
-        text += (f"\n\nIf it needs an answer, reply with:\npostbag send @{rec['from']} - <<'POSTBAG'\n"
+        command = bag().command(f"send @{rec['from']} -")
+        text += (f"\n\nIf it needs an answer, reply with:\n{command} <<'POSTBAG'\n"
                  "<your reply>\nPOSTBAG\n"
                  "Change POSTBAG at both ends to a word that does not occur in your reply.\n"
                  "Do not reply only to acknowledge.")
@@ -328,15 +394,15 @@ def join(source, peer=None):
                      **{field: os.environ[var] for field, var in SESSION[source].items()})
         renamed, taken = state.register(rec)
         write(rec)
-    print(", ".join([f"@{peer} ({source}) joined", *notes(renamed, taken, where)]))
+    print(", ".join([f"@{peer} ({source}) joined in bag {bag().label}", *notes(renamed, taken, where)]))
 
 
 def open_exchange(limit):
     if inside():
         fail("open is the human's verb")
-    with ledger() as write:
+    with ledger(create=True) as write:
         write(record("open", limit=limit))
-    print(f"exchange open: {limit} letters")
+    print(f"exchange open: {limit} letters in bag {bag().label}")
 
 
 def send(to, body):
@@ -361,7 +427,7 @@ def send(to, body):
             try:
                 KNOCK[vendor(target)](target, envelope(rec, state))
             except OSError as e:
-                command = f"postbag join {vendor(target)}" + (f" {to}" if to != vendor(target) else "")
+                command = bag().command(f"join {vendor(target)}" + (f" {to}" if to != vendor(target) else ""))
                 fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}")
             submitted = label
             write(rec)
@@ -370,7 +436,7 @@ def send(to, body):
             raise
         fail(f"{submitted} was submitted to @{to}'s door but not recorded ({e}), "
              f"do not resend before checking @{to}'s session")
-    print(f"{label} delivered to @{to}, {left - 1} left")
+    print(f"{label} delivered to @{to} in bag {bag().label}, {left - 1} left")
 
 
 def read(count):
@@ -379,7 +445,7 @@ def read(count):
     current = (f"exchange {state.exchange}: {state.left} of {state.limit} letters left"
                if state.limit is not None else "no open exchange")
     experimental = " Experimental: more than two peers." if len(state.peers) > 2 else ""
-    print(f"in this bag: {names}. {current}.{experimental}")
+    print(f"in bag {bag().label}: {names}. {current}.{experimental}")
     group = None
     for rec, exchange, number, limit, note in state.history[-count:] if count else state.history:
         if exchange != group:
@@ -413,8 +479,24 @@ class Parser(argparse.ArgumentParser):
         fail(message)  # a usage mistake is a refusal an agent can meet, so it says stop too
 
 
+class SelectBag(argparse.Action):
+    def __call__(self, parser, namespace, value, option_string=None):
+        _selection.set(Bag(value))
+        setattr(namespace, self.dest, value)
+
+
 def main(argv=None):
+    token = _selection.set(None)
+    try:
+        cli(argv)
+    finally:
+        _selection.reset(token)
+
+
+def cli(argv):
     p = Parser(prog="postbag", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--bag", action=SelectBag, metavar="NAME",
+                   help="a bag name or absolute ledger path; overrides POSTBAG_LEDGER")
     p.add_argument("--version", action="version", version=f"postbag {__version__}")
     sub = p.add_subparsers(dest="verb", required=True)
     j = sub.add_parser("join")
@@ -428,6 +510,9 @@ def main(argv=None):
     sub.add_parser("read").add_argument("count", nargs="?", type=positive, help="only the last N records")
     a = p.parse_args(argv)
     try:
+        _selection.set(bag())  # Freeze the environment's path before any I/O or delivery.
+        if a.verb != "open":
+            bag().require_existing()
         run(a)
         sys.stdout.flush()
     except BrokenPipeError:

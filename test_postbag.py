@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import re
 import stat
 
 import pytest
@@ -10,6 +11,16 @@ import postbag
 
 VARS = {"claude": {"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/x.sock", "CLAUDE_CODE_MESSAGING_TOKEN": "tok"},
         "codex": {"CODEX_SESSION_ID": "t-1"}}
+
+
+def expected_bag_label():
+    """The fixtures select a custom absolute path, independent of Bag's helpers."""
+    return os.path.abspath(os.path.expanduser(os.environ["POSTBAG_LEDGER"]))
+
+
+def expected_bag_command(words):
+    path = expected_bag_label().replace("'", "'\\''")
+    return f"postbag --bag '{path}' {words}"
 
 
 @pytest.fixture
@@ -104,8 +115,8 @@ def test_the_letter_teaches_its_reader(joined):
     joined.send("codex", "hello")
     peer, door, text = joined.KNOCKED[0]
     assert peer == "codex" and door["thread"] == "t-1"
-    assert text.startswith("Letter 1 of 3 from @claude to @codex via postbag (exchange 1).")
-    assert "postbag send @claude - <<'POSTBAG'" in text and "does not occur in your reply" in text
+    assert text.startswith(f"Letter 1 of 3 from @claude to @codex via postbag (exchange 1, bag {expected_bag_label()}).")
+    assert expected_bag_command("send @claude - <<'POSTBAG'") in text and "does not occur in your reply" in text
     assert "\n\nhello\n\nIf it needs an answer" in text
     assert text.endswith("Do not reply only to acknowledge.")
 
@@ -125,7 +136,7 @@ def test_letter_recorded_only_after_delivery(joined):
         raise OSError("door closed")
 
     joined.KNOCK["codex"] = closed
-    with pytest.raises(SystemExit, match="door did not answer .door closed.*postbag join codex; stop and ask the human"):
+    with pytest.raises(SystemExit, match="door did not answer .door closed.*" + re.escape(expected_bag_command("join codex")) + "; stop and ask the human"):
         joined.send("codex", "x")
     assert all(r["kind"] != "letter" for r in joined.records())
 
