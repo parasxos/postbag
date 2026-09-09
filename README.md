@@ -31,7 +31,7 @@ that sent it.
 Each vendor in use brings its own door. A Claude Code session exports
 `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` to the
 commands it runs. A Codex session exports `CODEX_SESSION_ID` and has a
-`codex` binary with the `queue` command (0.149 or later); set `POSTBAG_CODEX`
+`codex` binary with the `queue` command (0.149 or later). Set `POSTBAG_CODEX`
 if it is not in the ChatGPT app or on `PATH`. Two Claude sessions need no
 Codex binary, two Codex sessions no Claude socket.
 
