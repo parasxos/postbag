@@ -35,10 +35,12 @@ needs the `queue` command [Codex added in 0.149](https://github.com/openai/codex
 must export `CODEX_SESSION_ID`, and `codex queue --help` must work. Set
 `POSTBAG_CODEX` if the binary is not in the ChatGPT app or on `PATH`. Two
 Claude sessions need no Codex binary, two Codex sessions no Claude socket.
-Release 1.0.2 was verified end to end on macOS with Claude Code 2.1.263 and
-Codex 0.153.4 from the ChatGPT desktop app. The named routing of 1.1 is not
-yet verified live. Linux passes CI but the live exchange is not verified
-there. Windows is not supported.
+Verified live on macOS: 1.0.2 end to end with Claude Code 2.1.263 and
+Codex 0.153.4 from the ChatGPT desktop app, and 1.1.0 between two Claude
+Code 2.1.263 sessions registered as @ada and @bob, one two-letter exchange
+with a challenge and a quoted reply through each session's own socket, then
+the spent-budget refusal. Linux passes CI but the live exchange is not
+verified there. Windows is not supported.
 
 ## Quick start
 
