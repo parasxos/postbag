@@ -8,10 +8,10 @@ in one ledger, and counts against a human-set letter budget.
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
 
-![postbag demo: two Claude Code sessions join as ada and bob, you open an exchange of four letters, ada asks bob for a review, bob answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.1.0/docs/assets/demo.gif)
+![postbag demo: two Claude Code sessions join as ada and bob, you open an exchange of four letters, ada asks bob for a review, bob answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.1.1/docs/assets/demo.gif)
 
 *Real commands, real output, fake doors: a temporary ledger and two throwaway
-sockets, so no session or token is shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.1.0/docs/demo.tape).*
+sockets, so no session or token is shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.1.1/docs/demo.tape).*
 
 Use it to have one agent review the other's diff, to split a task between
 them and agree the interface by letter, or to get a second opinion without
@@ -26,7 +26,7 @@ pipx install postbag
 postbag --version
 ```
 
-Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.1.0`.
+Or from the tag: `pipx install git+https://github.com/parasxos/postbag@v1.1.1`.
 
 Each vendor in use brings its own door. A Claude Code session needs its
 per-session messaging socket and must export `CLAUDE_CODE_MESSAGING_SOCKET`
@@ -89,7 +89,7 @@ more is experimental, `read` says so, and every letter then lists the
 registered names. The ledger, `~/.postbag/ledger.jsonl`, is the only state
 and is shared across projects by default. Set the same `POSTBAG_LEDGER` in
 both sessions and your terminal for a separate bag. No daemon, no polling,
-no hooks, no server, no config file. [CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.1.0/CONCEPT.md)
+no hooks, no server, no config file. [CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.1.1/CONCEPT.md)
 is the whole specification in a page, with the envelope's exact shape and
 the table that maps Claude Code's own words onto postbag's.
 
@@ -113,6 +113,6 @@ the table that maps Claude Code's own words onto postbag's.
   are no acknowledgements or retries. Check the recipient before sending again.
 
 postbag is a small bridge for two existing sessions. Tools that do more, and
-what they do, are listed in [docs/readme-research.md](https://github.com/parasxos/postbag/blob/v1.1.0/docs/readme-research.md).
+what they do, are listed in [docs/readme-research.md](https://github.com/parasxos/postbag/blob/v1.1.1/docs/readme-research.md).
 
-[Concept](https://github.com/parasxos/postbag/blob/v1.1.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.1.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v1.1.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.1.0/LICENSE)
+[Concept](https://github.com/parasxos/postbag/blob/v1.1.1/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.1.1/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v1.1.1/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.1.1/LICENSE)
