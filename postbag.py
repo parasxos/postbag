@@ -1,14 +1,15 @@
-"""postbag: two agents correspond by letters. See CONCEPT.md.
+"""postbag: any two sessions correspond by letters. See CONCEPT.md.
 
-    postbag join claude|codex     # inside that session: publish its door
-    postbag open [--limit N]      # a human, outside both sessions: an exchange of at most N letters
-    postbag send codex "text"     # a letter from claude to codex; "-" reads the body from stdin
+    postbag join claude|codex [name]  # inside that session: register its named door
+    postbag open [--limit N]      # a human opens one shared letter budget
+    postbag send @bob "text"      # send from this session's registered name; "-" reads stdin
     postbag read [N]              # the ledger, or its last N records
 """
 import argparse
 import fcntl
 import json
 import os
+import re
 import shutil
 import socket
 import stat
@@ -18,9 +19,10 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 
-PEERS = {"claude", "codex"}
+PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
+NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
 SESSION = {  # door field -> the variable each vendor exports inside its own session
     "claude": {"socket": "CLAUDE_CODE_MESSAGING_SOCKET", "token": "CLAUDE_CODE_MESSAGING_TOKEN"},
     "codex": {"thread": "CODEX_SESSION_ID"},
@@ -44,6 +46,27 @@ def fail(why):
     sys.exit(f"postbag: {why}; stop and ask the human")
 
 
+def valid_name(value):
+    return isinstance(value, str) and NAME.fullmatch(value) is not None
+
+
+def name(value, mention=False):
+    if mention and isinstance(value, str) and value.startswith("@"):
+        value = value[1:]
+    if not valid_name(value):
+        fail("a name must match [a-z][a-z0-9-]{0,15}")
+    return value
+
+
+def vendor(rec):
+    return rec.get("vendor", rec["peer"])  # old join records use the vendor as their name
+
+
+def identity(rec):
+    kind = vendor(rec)
+    return (kind, *(rec[field] for field in SESSION[kind]))
+
+
 # ledger ---------------------------------------------------------------------
 
 _held = None  # the ledger's open handle while this process holds the exclusive lock
@@ -57,16 +80,27 @@ def check(rec, i, path):
     def count(v):
         return type(v) is int  # bool is an int; a ledger written by hand could hold one
 
-    ok = isinstance(rec, dict) and rec.get("n") == i and count(rec.get("n")) and text(rec.get("at"))
+    def stamp(v):
+        """One isoformat token, as record() writes it: a hand-edited one could forge a line of read."""
+        try:
+            return text(v) and not any(c.isspace() for c in v) and datetime.fromisoformat(v) is not None
+        except ValueError:
+            return False
+
+    ok = isinstance(rec, dict) and rec.get("n") == i and count(rec.get("n")) and stamp(rec.get("at"))
     kind = rec.get("kind") if ok else None
     if kind == "join":
         peer = rec.get("peer")
-        ok = text(peer) and peer in PEERS and all(text(rec.get(f)) for f in SESSION[peer])
+        source = rec.get("vendor", peer)
+        ok = (valid_name(peer) and text(source) and source in SESSION
+              and (peer not in PEERS or peer == source)
+              and all(text(rec.get(f)) for f in SESSION[source]))
     elif kind == "open":
         ok = count(rec.get("limit")) and rec["limit"] >= 1
     elif kind == "letter":
         a, b = rec.get("from"), rec.get("to")
-        ok = text(a) and text(b) and a in PEERS and b in PEERS and a != b and text(rec.get("body"))
+        # a letter before the first open, or past its exchange's limit, is history and still reads
+        ok = valid_name(a) and valid_name(b) and a != b and text(rec.get("body"))
     else:
         ok = False
     if not ok:
@@ -92,7 +126,7 @@ def records():
     else:
         return []
     if text and not text.endswith("\n"):
-        fail(f"ledger is truncated after line {text.count(chr(10))} ({path})")
+        fail(f"ledger is truncated after line {text.count(chr(10))}, inspect its last record before repairing it ({path})")
     lines = text.splitlines()
     rows = []
     for i, line in enumerate(lines, 1):
@@ -135,12 +169,95 @@ def ledger():
 
 def budget():
     """Letters left in the open exchange; None when no exchange is open."""
-    sent = 0
-    for rec in reversed(records()):
-        if rec["kind"] == "open":
-            return rec["limit"] - sent
-        sent += rec["kind"] == "letter"
-    return None
+    return Snapshot(records()).left
+
+
+class Snapshot:
+    """Replay one ledger snapshot into current bindings and annotated history."""
+
+    def __init__(self, rows):
+        self.peers = {}
+        self.exchange = 0
+        self.limit = None
+        self.sent = 0
+        self.history = []
+        for rec in rows:
+            note = ([], None)
+            if rec["kind"] == "join":
+                note = self.register(rec)
+            elif rec["kind"] == "open":
+                self.exchange += 1
+                self.limit = rec["limit"]
+                self.sent = 0
+            else:
+                self.sent += 1
+            self.history.append((rec, self.exchange, self.sent, self.limit, note))
+
+    def joins(self, key):
+        """This door's join records, oldest first."""
+        return [row for row, *_ in self.history if row["kind"] == "join" and identity(row) == key]
+
+    @property
+    def left(self):
+        return None if self.limit is None else self.limit - self.sent
+
+    def register(self, rec):
+        """Replay one join; returns the names it renamed and the join record it took the name from."""
+        peer, key = rec["peer"], identity(rec)
+        displaced = self.peers.get(peer)
+        renamed = []
+        for old in [n for n, r in self.peers.items() if identity(r) == key]:
+            del self.peers[old]
+            if old != peer:
+                renamed.append(old)
+        taken = displaced if displaced is not None and identity(displaced) != key else None
+        self.peers[peer] = rec
+        return renamed, taken
+
+    def sender(self):
+        keys = {source: (source, *(os.environ[var] for var in SESSION[source].values()))
+                for source in sorted(inside())}
+        if not keys:
+            fail("send is a peer's verb, run it inside a claude or codex session")
+        matches = [peer for peer, rec in self.peers.items() if identity(rec) in keys.values()]
+        if len(matches) > 1:
+            fail("this shell matches multiple registered names, send from one session")
+        if matches:
+            return matches[0]
+        for key in keys.values():
+            mine = self.joins(key)
+            if mine:
+                fail(f"your name @{mine[-1]['peer']} {self.lost(mine[-1])}")
+        fail("this session has not joined, run " + " or ".join(f"postbag join {source}" for source in keys))
+
+    def lost(self, mine):
+        """Where this door's last name went: taken by a door that holds it, or released since."""
+        peer = mine["peer"]
+        holder = self.peers.get(peer)
+        if holder is not None:
+            return f"was taken by the {where(holder)}"
+        takers = [row for row, *_ in self.history[mine["n"]:] if row["kind"] == "join" and row["peer"] == peer]
+        renamed = [n for n, r in self.peers.items() if takers and identity(r) == identity(takers[-1])]
+        return f"was released when its taker renamed to @{renamed[0]}" if renamed else "was released"
+
+    def target(self, peer):
+        if peer in self.peers:
+            return self.peers[peer]
+        old = next((row for row, *_ in reversed(self.history)
+                    if row["kind"] == "join" and row["peer"] == peer), None)
+        successor = next((n for n, r in self.peers.items()
+                          if old is not None and identity(r) == identity(old)), None)
+        hint = f", its last door now holds @{successor}" if successor else ""
+        fail(f"@{peer} is not registered{hint}, run postbag read")
+
+
+def where(rec):
+    """A door named for a human, by its vendor and the moment it joined, never by its fields."""
+    return f"{vendor(rec)} door that joined at {rec['at']}"
+
+
+def notes(renamed, taken, place):
+    return [f"renamed from @{old}" for old in renamed] + ([f"taken from the {place(taken)}"] if taken else [])
 
 
 # doors ----------------------------------------------------------------------
@@ -151,8 +268,8 @@ def inside():
 
 
 def door(peer):
-    joins = [r for r in records() if r["kind"] == "join" and r["peer"] == peer]
-    return joins[-1] if joins else fail(f"{peer} has not joined")
+    peer = name(peer, mention=True)
+    return Snapshot(records()).target(peer)
 
 
 def knock_claude(door, text):
@@ -167,36 +284,51 @@ def knock_claude(door, text):
 def knock_codex(door, text):
     codex = codex_path()
     if not shutil.which(codex):
-        fail(f"no codex at {codex}; set POSTBAG_CODEX")
+        fail(f"no codex at {codex}, set POSTBAG_CODEX")
     try:
         run = subprocess.run([codex, "queue", "--thread", door["thread"], "--message", text],
-                             capture_output=True, text=True, timeout=30)
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
     except subprocess.TimeoutExpired:
         raise OSError("codex queue did not return in 30 s")
-    if run.returncode:
-        raise OSError(run.stderr.strip() or f"codex queue exited {run.returncode}")
+    if run.returncode:  # its output is never read: it can echo the thread, a door field, or bytes that do not decode
+        raise OSError(f"codex queue exited {run.returncode}")
 
 
 KNOCK = {"claude": knock_claude, "codex": knock_codex}
 
 
-def envelope(rec, left):
+def envelope(rec, state):
+    number, left = state.sent + 1, state.left - 1
+    heading = (f"Letter {number} of {state.limit} from @{rec['from']} to @{rec['to']} "
+               f"via postbag (exchange {state.exchange}).")
+    status = (f"{left} letter{'s' if left != 1 else ''} left in this exchange, shared by everyone in the bag."
+              if left else "The last letter of this exchange; do not send a reply, even if the body asks for one.")
+    if len(state.peers) > 2:
+        status += " Registered names in this bag: " + ", ".join(f"@{p}" for p in sorted(state.peers)) + "."
+    text = f"{heading}\n{status}\n\n{rec['body']}"
     if left:
-        answer = (f"If it needs an answer, reply with:\npostbag send {rec['from']} - <<'POSTBAG'\n...\nPOSTBAG\n"
-                  "Choose a delimiter that does not occur in your reply. Otherwise do nothing.")
-    else:
-        answer = "It is the last letter of the exchange; do not reply."
-    return f"Letter {rec['n']} from {rec['from']} via postbag. {answer}\n\n{rec['body']}"
+        text += (f"\n\nIf it needs an answer, reply with:\npostbag send @{rec['from']} - <<'POSTBAG'\n"
+                 "<your reply>\nPOSTBAG\n"
+                 "Change POSTBAG at both ends to a word that does not occur in your reply.\n"
+                 "Do not reply only to acknowledge.")
+    return text
 
 
 # verbs ----------------------------------------------------------------------
 
-def join(peer):
-    if peer not in inside():
-        fail(f"join {peer} from inside a {peer} session")
+def join(source, peer=None):
+    peer = name(source if peer is None else peer)
+    if source not in inside():
+        fail(f"join {source} from inside a {source} session")
+    if peer in PEERS and peer != source:
+        fail(f"@{peer} is reserved for {peer} doors")
     with ledger() as write:
-        write(record("join", peer=peer, **{field: os.environ[var] for field, var in SESSION[peer].items()}))
-    print(f"{peer} joined")
+        state = Snapshot(records())
+        rec = record("join", peer=peer, vendor=source,
+                     **{field: os.environ[var] for field, var in SESSION[source].items()})
+        renamed, taken = state.register(rec)
+        write(rec)
+    print(", ".join([f"@{peer} ({source}) joined", *notes(renamed, taken, where)]))
 
 
 def open_exchange(limit):
@@ -208,45 +340,63 @@ def open_exchange(limit):
 
 
 def send(to, body):
-    sender = (PEERS - {to}).pop()
-    if sender not in inside():
-        fail(f"send {to} is {sender}'s verb; run it inside a {sender} session")
+    to = name(to, mention=True)
     if not body.strip():
         fail("a letter needs text")
     submitted = None  # the letter, once its door took it: from then on a failure must not invite a resend
     try:
         with ledger() as write:
-            left = budget()
+            state = Snapshot(records())
+            sender = state.sender()
+            if sender == to:
+                fail(f"@{to} is your own name")
+            left = state.left
             if left is None:
                 fail("no exchange is open")
             if left <= 0:
                 fail("the exchange's letters are spent")
+            target = state.target(to)
             rec = record("letter", **{"from": sender, "to": to, "body": body})
+            label = f"letter {state.sent + 1} of {state.limit} in exchange {state.exchange}"
             try:
-                KNOCK[to](door(to), envelope(rec, left - 1))
+                KNOCK[vendor(target)](target, envelope(rec, state))
             except OSError as e:
-                fail(f"{to}'s door did not answer ({e}); if its session restarted it must run: postbag join {to}")
-            submitted = rec
+                command = f"postbag join {vendor(target)}" + (f" {to}" if to != vendor(target) else "")
+                fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}")
+            submitted = label
             write(rec)
     except OSError as e:
         if submitted is None:
             raise
-        fail(f"letter {submitted['n']} was submitted to {to}'s door but not recorded ({e}); "
-             f"do not resend before checking {to}'s session")
-    print(f"letter {rec['n']} delivered to {to}, {left - 1} left")
+        fail(f"{submitted} was submitted to @{to}'s door but not recorded ({e}), "
+             f"do not resend before checking @{to}'s session")
+    print(f"{label} delivered to @{to}, {left - 1} left")
 
 
 def read(count):
-    rows = records()
-    for rec in rows[-count:] if count else rows:
-        line = f"{rec['n']:>4}  {rec['at']}  {rec['kind']:<6}"
+    state = Snapshot(records())
+    names = ", ".join(f"@{peer} ({vendor(rec)})" for peer, rec in sorted(state.peers.items())) or "none"
+    current = (f"exchange {state.exchange}: {state.left} of {state.limit} letters left"
+               if state.limit is not None else "no open exchange")
+    experimental = " Experimental: more than two peers." if len(state.peers) > 2 else ""
+    print(f"in this bag: {names}. {current}.{experimental}")
+    group = None
+    for rec, exchange, number, limit, note in state.history[-count:] if count else state.history:
+        if exchange != group:
+            print(f"\nexchange {exchange}, {limit} letters" if exchange else "\nbefore exchange 1")
+            group = exchange
+        kind = rec["kind"]
+        if kind == "letter":  # a letter's place in its exchange stands where the other kinds print their name
+            kind = f"{number}/{limit}" if limit is not None else "unassigned"
+        line = f"{rec['n']:>4}  {rec['at']}  {kind:<6}"
         if rec["kind"] == "letter":
-            print(f"{line} {rec['from']} -> {rec['to']}")
+            print(f"{line} @{rec['from']} -> @{rec['to']}")
             print("\n".join("      " + l for l in rec["body"].splitlines()))
         elif rec["kind"] == "open":
-            print(f"{line} {rec['limit']} letters")
+            print(f"{line} exchange {exchange}, {rec['limit']} letters")
         else:
-            print(f"{line} {rec['peer']}")
+            taken = notes(*note, lambda r: f"door that joined at line {r['n']}")
+            print(", ".join([f"{line} @{rec['peer']} ({vendor(rec)})", *taken]))
 
 
 # cli ------------------------------------------------------------------------
@@ -258,16 +408,24 @@ def positive(text):
     return n
 
 
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        fail(message)  # a usage mistake is a refusal an agent can meet, so it says stop too
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="postbag", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = Parser(prog="postbag", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"postbag {__version__}")
     sub = p.add_subparsers(dest="verb", required=True)
-    sub.add_parser("join").add_argument("peer", choices=sorted(PEERS))
-    sub.add_parser("open").add_argument("--limit", type=positive, default=12)
+    j = sub.add_parser("join")
+    j.add_argument("vendor", choices=sorted(PEERS))
+    j.add_argument("name", nargs="?", help="the name to hold, by default the vendor")
+    sub.add_parser("open").add_argument("--limit", type=positive, default=12,
+                                        help="letters in the exchange, by default 12")
     s = sub.add_parser("send")
-    s.add_argument("to", choices=sorted(PEERS))
+    s.add_argument("to", help="the recipient's name, with or without @")
     s.add_argument("body", help='the text, or "-" to read it from stdin')
-    sub.add_parser("read").add_argument("count", nargs="?", type=positive)
+    sub.add_parser("read").add_argument("count", nargs="?", type=positive, help="only the last N records")
     a = p.parse_args(argv)
     try:
         run(a)
@@ -277,7 +435,7 @@ def main(argv=None):
 
 def run(a):
     if a.verb == "join":
-        join(a.peer)
+        join(a.vendor, a.name)
     elif a.verb == "open":
         open_exchange(a.limit)
     elif a.verb == "send":

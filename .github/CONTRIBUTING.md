@@ -1,9 +1,10 @@
 # Contributing
 
 Read [CONCEPT.md](../CONCEPT.md) first. It is short and it is the
-specification. Two peers, four verbs, one ledger, native doors, a human
-sets the budget. A change that adds a noun has to name the capability the
-existing nouns cannot provide.
+specification. Five nouns, four verbs, one ledger, native doors, a human
+sets the budget. Any two supported sessions, of the same vendor or not, are
+the supported use. Three or more is experimental. A change that adds a noun
+has to name the capability the existing nouns cannot provide.
 
 ## Develop
 
@@ -36,9 +37,10 @@ Commit subjects are short and imperative.
 1. Bump `__version__` in `postbag.py`, add a `CHANGELOG.md` entry, and
    move the tag-pinned links in `README.md` to the new tag.
 2. CI green on `main`.
-3. `git tag v<version> && git push origin v<version>`. The release
+3. Native acceptance test, the actual gate: install the release candidate
+   in a clean venv and run one two-way exchange between two real sessions,
+   including the spent-budget refusal. Do not tag until it passes.
+4. `git tag v<version> && git push origin v<version>`. The release
    workflow builds the wheel and sdist, checks them, publishes a GitHub
    release with checksums, then publishes those same assets to PyPI
    through trusted publishing.
-4. Install from the tag in a clean venv and run one two-way exchange with
-   real sessions, including the spent-budget refusal.

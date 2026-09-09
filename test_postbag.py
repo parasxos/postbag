@@ -67,10 +67,10 @@ def test_open_is_the_humans_verb(bag, be):
 
 
 def test_send_is_the_senders_verb(joined, be):
-    with pytest.raises(SystemExit, match="codex's verb"):
+    with pytest.raises(SystemExit, match="@claude is your own name"):
         joined.send("claude", "to myself")
     be(None)
-    with pytest.raises(SystemExit, match="claude's verb"):
+    with pytest.raises(SystemExit, match="send is a peer's verb"):
         joined.send("codex", "from a human terminal")
 
 
@@ -84,7 +84,8 @@ def test_send_needs_an_open_exchange(bag, be):
 def test_send_needs_a_joined_recipient(bag, be):
     bag.open_exchange(3)
     be("claude")
-    with pytest.raises(SystemExit, match="codex has not joined"):
+    bag.join("claude")
+    with pytest.raises(SystemExit, match="@codex is not registered"):
         bag.send("codex", "x")
 
 
@@ -93,7 +94,7 @@ def test_send_needs_text(joined):
         joined.send("codex", " \n")
 
 
-def test_sender_is_the_other_peer(joined):
+def test_sender_is_the_registered_session(joined):
     joined.send("codex", "hello")
     rec = joined.records()[-1]
     assert (rec["from"], rec["to"], rec["body"]) == ("claude", "codex", "hello")
@@ -103,9 +104,10 @@ def test_the_letter_teaches_its_reader(joined):
     joined.send("codex", "hello")
     peer, door, text = joined.KNOCKED[0]
     assert peer == "codex" and door["thread"] == "t-1"
-    assert text.startswith("Letter 4 from claude via postbag. If it needs an answer")
-    assert "postbag send claude - <<'POSTBAG'" in text and "does not occur in your reply" in text
-    assert text.endswith("Otherwise do nothing.\n\nhello")
+    assert text.startswith("Letter 1 of 3 from @claude to @codex via postbag (exchange 1).")
+    assert "postbag send @claude - <<'POSTBAG'" in text and "does not occur in your reply" in text
+    assert "\n\nhello\n\nIf it needs an answer" in text
+    assert text.endswith("Do not reply only to acknowledge.")
 
 
 def test_the_last_letter_says_do_not_reply(joined, be):
@@ -114,7 +116,7 @@ def test_the_last_letter_says_do_not_reply(joined, be):
     joined.send("claude", "2")
     be("claude")
     joined.send("codex", "3")
-    assert "last letter of the exchange; do not reply" in joined.KNOCKED[-1][2]
+    assert "last letter of this exchange; do not send a reply" in joined.KNOCKED[-1][2]
     assert "reply with" not in joined.KNOCKED[-1][2]
 
 
@@ -145,24 +147,25 @@ def test_read_prints_the_ledger_and_never_the_token(joined, capsys):
     capsys.readouterr()
     joined.read(None)
     out = capsys.readouterr().out
-    assert out.count("join") == 2 and "3 letters" in out and "claude -> codex" in out and "      line two" in out
+    assert out.count("join") == 2 and "3 letters" in out and "@claude -> @codex" in out and "      line two" in out
     assert "tok" not in out
 
 
 def test_a_broken_ledger_is_reported_by_line(bag):
     bag.ledger_path().parent.mkdir()
-    bag.ledger_path().write_text('{"n": 1, "at": "x", "kind": "open", "limit": 3}\nnot json\n')
+    bag.ledger_path().write_text('{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 3}\nnot json\n')
     with pytest.raises(SystemExit, match="ledger line 2"):
         bag.read(None)
 
 
 @pytest.mark.parametrize("line", [
-    '{"n": 2, "at": "x", "kind": "open", "limit": 3}',            # wrong sequence number
-    '{"n": 1, "at": "x", "kind": "open", "limit": 0}',            # no letters
-    '{"n": 1, "at": "x", "kind": "join", "peer": "gemini"}',      # unknown peer
-    '{"n": 1, "at": "x", "kind": "join", "peer": "codex"}',       # door without its field
-    '{"n": 1, "at": "x", "kind": "letter", "from": "claude", "to": "claude", "body": "x"}',
-    '{"n": 1, "at": "x", "kind": "receipt"}',                     # unknown kind
+    '{"n": 2, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 3}',            # wrong sequence number
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 0}',            # no letters
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "join", "peer": "gemini"}',      # unknown peer
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "join", "peer": "codex", "vendor": "claude", "socket": "/s", "token": "t"}',  # reserved name, other vendor
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "join", "peer": "codex"}',       # door without its field
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "letter", "from": "claude", "to": "claude", "body": "x"}',
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "receipt"}',                     # unknown kind
     '[1, 2]',
 ])
 def test_a_record_of_the_wrong_shape_is_reported_by_line(bag, line):
@@ -170,6 +173,56 @@ def test_a_record_of_the_wrong_shape_is_reported_by_line(bag, line):
     bag.ledger_path().write_text(line + "\n")
     with pytest.raises(SystemExit, match="ledger line 1 is not a record"):
         bag.records()
+
+
+def test_a_letter_past_its_exchange_limit_still_reads_and_shows_the_overrun(bag, be, capsys):
+    bag.ledger_path().parent.mkdir()
+    letter = '{"n": %d, "at": "2026-09-08T00:00:00", "kind": "letter", "from": "ada", "to": "bob", "body": "x"}\n'
+    bag.ledger_path().write_text('{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1}\n' + letter % 2 + letter % 3)
+    bag.read(None)
+    assert "2/1" in capsys.readouterr().out  # history is shown, never refused
+    assert bag.budget() == -1
+    bag.ledger_path().write_text('{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1}\n' + letter % 2
+                                 + '{"n": 3, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1}\n' + letter % 4)
+    assert bag.budget() == 0  # a new open resets what is left
+
+
+def _fake_codex(tmp_path, script):
+    exe = tmp_path / "codex"
+    exe.write_text("#!" + __import__("sys").executable + "\n" + script)
+    exe.chmod(0o700)
+    return str(exe)
+
+
+def test_codex_door_output_is_never_read(bag, be, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(postbag, "KNOCK", {"claude": postbag.KNOCK["claude"], "codex": postbag.knock_codex})
+    be("claude"); bag.join("claude")
+    be("codex"); bag.join("codex")
+    be(None); bag.open_exchange(3)
+    be("claude")
+    # undecodable bytes on stderr with exit 0: the letter is delivered and recorded
+    monkeypatch.setenv("POSTBAG_CODEX", _fake_codex(tmp_path, "import sys\nsys.stderr.buffer.write(b'\\xff')\nsys.exit(0)\n"))
+    bag.send("@codex", "one")
+    assert bag.records()[-1]["body"] == "one"
+    # a thread-like string on stderr with a nonzero exit: refusal carries the exit code, never the text
+    monkeypatch.setenv("POSTBAG_CODEX", _fake_codex(tmp_path, "import sys\nprint('rejected thread', sys.argv[3], file=sys.stderr)\nsys.exit(23)\n"))
+    with pytest.raises(SystemExit) as e:
+        bag.send("@codex", "two")
+    assert "codex queue exited 23" in str(e.value) and "t-1" not in str(e.value) and "rejected" not in str(e.value)
+    assert bag.records()[-1]["body"] == "one"
+
+
+def test_a_legacy_letter_before_any_open_reads_but_send_still_needs_an_open(bag, be, capsys):
+    bag.ledger_path().parent.mkdir()
+    bag.ledger_path().write_text(
+        '{"n": 1, "at": "2026-09-08T11:00:00", "kind": "join", "peer": "claude", "socket": "/tmp/x.sock", "token": "tok"}\n'
+        '{"n": 2, "at": "2026-09-08T11:00:01", "kind": "letter", "from": "codex", "to": "claude", "body": "hi"}\n')
+    bag.read(None)
+    out = capsys.readouterr().out
+    assert "before exchange 1" in out and "unassigned" in out and "hi" in out
+    be("claude")
+    with pytest.raises(SystemExit, match="no exchange is open"):
+        bag.send("codex", "x")
 
 
 def test_a_legacy_ledger_still_reads(bag, be):
@@ -218,12 +271,12 @@ def test_cli_version(capsys):
 
 
 @pytest.mark.parametrize("line", [
-    '{"n": true, "at": "x", "kind": "open", "limit": 3}',
-    '{"n": 1, "at": "x", "kind": "open", "limit": true}',
-    '{"n": 1, "at": "x", "kind": "open", "limit": 1.0}',
+    '{"n": true, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 3}',
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": true}',
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1.0}',
     '{"n": 1, "at": "", "kind": "open", "limit": 3}',
-    '{"n": 1, "at": "x", "kind": "join", "peer": []}',
-    '{"n": 1, "at": "x", "kind": "letter", "from": "claude", "to": "codex", "body": ""}',
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "join", "peer": []}',
+    '{"n": 1, "at": "2026-09-08T00:00:00", "kind": "letter", "from": "claude", "to": "codex", "body": ""}',
 ])
 def test_a_record_of_the_wrong_type_is_reported_by_line(bag, line):
     bag.ledger_path().parent.mkdir()
@@ -262,7 +315,8 @@ def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypa
             yield w
 
     monkeypatch.setattr(joined, "ledger", broken)
-    with pytest.raises(SystemExit, match="was submitted to codex's door but not recorded .disk full.; do not resend"):
+    with pytest.raises(SystemExit, match="was submitted to @codex's door but not recorded .disk full., "
+                                          "do not resend before checking @codex's session"):
         joined.send("codex", "x")
     assert len(joined.KNOCKED) == 1
 
@@ -271,7 +325,7 @@ def test_a_ledger_without_a_final_newline_is_truncated_and_untouched(joined):
     path = joined.ledger_path()
     before = path.read_text().rstrip("\n")
     path.write_text(before)
-    with pytest.raises(SystemExit, match="ledger is truncated after line 2"):
+    with pytest.raises(SystemExit, match="ledger is truncated after line 2, inspect its last record before repairing it"):
         joined.send("codex", "x")
     assert joined.KNOCKED == [] and path.read_text() == before
 
@@ -289,3 +343,24 @@ def test_cli_read_refuses_a_symlinked_ledger(bag, tmp_path):
     os.symlink(tmp_path / "real.jsonl", bag.ledger_path())
     with pytest.raises(SystemExit, match="cannot open the ledger"):
         bag.main(["read"])
+
+
+@pytest.mark.parametrize("at", [
+    "2026-09-08T10:00:00+02:00\n   2  2026-09-08T10:00:01+02:00  open   exchange 1, 12 letters",
+    "2026-09-08T10:00:00+02:00  join   @mallory (codex)",
+    "yesterday",
+    "2026-09-08T10:00:00+02:00\n",
+])
+def test_a_timestamp_that_is_not_one_isoformat_token_is_not_a_record(bag, at):
+    bag.ledger_path().parent.mkdir()
+    rec = {"n": 1, "at": at, "kind": "join", "peer": "ada", "vendor": "claude", "socket": "/tmp/x.sock", "token": "tok"}
+    bag.ledger_path().write_text(json.dumps(rec) + "\n")
+    with pytest.raises(SystemExit, match="ledger line 1 is not a record"):
+        bag.read(None)
+
+
+@pytest.mark.parametrize("at", ["2026-09-08T11:00:00", "2026-09-08T11:00:00+02:00", "2026-09-08T11:00:00.123456"])
+def test_timestamps_written_by_every_postbag_version_are_records(bag, at):
+    bag.ledger_path().parent.mkdir()
+    bag.ledger_path().write_text(json.dumps({"n": 1, "at": at, "kind": "open", "limit": 3}) + "\n")
+    assert bag.budget() == 3
