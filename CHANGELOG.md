@@ -4,6 +4,11 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-09-09
+
+### Fixed
+- `read` exits quietly when its reader closes the pipe early.
+
 ## [1.1.0] - 2026-09-09
 
 Any two sessions, of the same vendor or not. The nouns and verbs are the
@@ -121,6 +126,7 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
+[1.1.1]: https://github.com/parasxos/postbag/releases/tag/v1.1.1
 [1.1.0]: https://github.com/parasxos/postbag/releases/tag/v1.1.0
 [1.0.2]: https://github.com/parasxos/postbag/releases/tag/v1.0.2
 [1.0.1]: https://github.com/parasxos/postbag/releases/tag/v1.0.1

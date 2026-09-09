@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
@@ -429,6 +429,11 @@ def main(argv=None):
     a = p.parse_args(argv)
     try:
         run(a)
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # The reader closed early; also prevent another failure during exit's flush.
+        with open(os.devnull, "w") as sink:
+            os.dup2(sink.fileno(), sys.stdout.fileno())
     except (OSError, UnicodeError) as e:
         fail(f"{a.verb} failed ({e})")
 

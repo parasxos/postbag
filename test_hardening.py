@@ -94,6 +94,56 @@ def rows(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def read_history(cli, letter_count):
+    records = [{"n": 1, "at": "2026-09-09T08:00:00+02:00", "kind": "open",
+                "limit": max(1, letter_count)}]
+    records.extend({"n": i + 2, "at": "2026-09-09T08:00:01+02:00", "kind": "letter",
+                    "from": "claude", "to": "codex", "body": "x" * 1024}
+                   for i in range(letter_count))
+    original = "".join(json.dumps(record) + "\n" for record in records).encode()
+    cli.ledger.parent.mkdir()
+    cli.ledger.write_bytes(original)
+    return original
+
+
+@pytest.mark.parametrize("letter_count", [0, 400], ids=["buffered", "streaming"])
+def test_read_exits_quietly_when_its_output_pipe_is_closed(cli, letter_count):
+    original = read_history(cli, letter_count)
+    reader, writer = os.pipe()
+    os.close(reader)
+    try:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "read"], env=cli.environment(),
+            stdout=writer, stderr=subprocess.PIPE, text=True, timeout=10,
+        )
+    finally:
+        os.close(writer)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert cli.ledger.read_bytes() == original
+
+
+def test_read_can_be_piped_to_head(cli):
+    original = read_history(cli, 400)
+    with subprocess.Popen(
+        [sys.executable, str(SCRIPT), "read"], env=cli.environment(),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    ) as producer:
+        consumer = subprocess.run(
+            ["head", "-n", "1"], stdin=producer.stdout,
+            capture_output=True, text=True, timeout=10,
+        )
+        producer.stdout.close()
+        producer.stdout = None
+        _, stderr = producer.communicate(timeout=10)
+
+    assert consumer.returncode == producer.returncode == 0, stderr
+    assert consumer.stdout == "in this bag: none. exchange 1: 0 of 400 letters left.\n"
+    assert consumer.stderr == stderr == ""
+    assert cli.ledger.read_bytes() == original
+
+
 @pytest.mark.parametrize("record", [
     pytest.param(None, id="null"),
     pytest.param([], id="list"),
