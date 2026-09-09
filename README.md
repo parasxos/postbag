@@ -67,16 +67,16 @@ holds the name when it runs, and a displaced door's next `send` refuses.
 ## Named bags
 
 For a second conversation, open a second bag first, in your own terminal:
-`postbag --bag acceptance open --limit 6`. Each session then joins with the
-same flag, `postbag --bag acceptance join claude ada` and
+`postbag --bag acceptance open --limit 6`. Each session then joins with the same
+flag, `postbag --bag acceptance join claude ada` and
 `postbag --bag acceptance join claude bob`, and ada sends with
 `postbag --bag acceptance send @bob "..."`. `--bag` goes before the verb and
-takes a name, kept in `~/.postbag/bags/<name>.jsonl`, or an absolute path.
-The default bag is `~/.postbag/ledger.jsonl`. Only `open` creates a named
-bag, the other verbs refuse one that does not exist. Every line postbag
-prints names its bag, and every command inside a letter or a refusal carries
-`--bag`, `--bag default` included, so a reply lands where the letter came
-from whatever the recipient's shell has set. `ls ~/.postbag/bags` lists
+takes a name, kept in `~/.postbag/bags/<name>.jsonl`, or an absolute path free
+of control characters. The default bag is `~/.postbag/ledger.jsonl`. Only `open`
+creates a named bag, the other verbs refuse one that does not exist. Every line
+postbag prints names its bag, and every command inside a letter or a refusal
+carries `--bag`, `--bag default` included, so a reply lands where the letter
+came from whatever the recipient's shell has set. `ls ~/.postbag/bags` lists
 them. Without `--bag`, `POSTBAG_LEDGER` still selects a ledger by path.
 
 ## Upgrading

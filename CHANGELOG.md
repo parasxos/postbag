@@ -42,6 +42,7 @@ command an agent is handed says which bag it belongs to.
   CLI reaches a bag by path: `POSTBAG_LEDGER='/abs/path' postbag send ...`.
 - `POSTBAG_LEDGER` is unchanged: a path, `~` expanded, used when `--bag` is
   absent.
+- Custom ledger paths containing control characters are refused.
 
 ## [1.1.1] - 2026-09-09
 

@@ -25,6 +25,7 @@ __version__ = "1.2.0"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")  # a path holding one would split every line that prints it
 SESSION = {  # door field -> the variable each vendor exports inside its own session
     "claude": {"socket": "CLAUDE_CODE_MESSAGING_SOCKET", "token": "CLAUDE_CODE_MESSAGING_TOKEN"},
     "codex": {"thread": "CODEX_SESSION_ID"},
@@ -56,8 +57,8 @@ class Bag:
             self.path = Path(path).expanduser().absolute()
         except (OSError, RuntimeError, ValueError) as e:
             fail(f"cannot select the ledger ({e})", context=False)
-        if "\0" in str(self.path):
-            fail("a ledger path cannot contain a null byte", context=False)
+        if CONTROL.search(str(self.path)):
+            fail("a bag path must not contain control characters", context=False)
         self.label = selector if self.named else "default" if self.path == default else str(self.path)
         self.argument = (self.label if self.named or self.label == "default"
                          else "'" + str(self.path).replace("'", "'\\''") + "'")
@@ -292,7 +293,7 @@ class Snapshot:
             mine = self.joins(key)
             if mine:
                 fail(f"your name @{mine[-1]['peer']} {self.lost(mine[-1])}")
-        fail(f"this session has not joined bag {bag().label}, run " + " or ".join(
+        fail("this session has not joined, run " + " or ".join(
             bag().command(f"join {source}") for source in keys))
 
     def lost(self, mine):

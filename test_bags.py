@@ -294,7 +294,7 @@ def test_not_joined_recovery_names_the_actual_vendor_and_selected_bag(bag_cli, v
     result = cli.run("--bag", "acceptance", "send", "@bob", "hello", peer="ada", vendor=vendor)
     assert result.returncode != 0 and cli.named.read_bytes() == before
     command = f"postbag --bag acceptance join {vendor}"
-    assert f"this session has not joined bag acceptance, run {command}" in result.stderr
+    assert f"in bag acceptance: this session has not joined, run {command}; stop" in result.stderr
     assert "stop and ask the human" in result.stderr and not cli.capture.exists()
     conflicting = cli.cwd / "unjoined-environment.jsonl"
     ok(cli.run(*shlex.split(command)[1:], peer="ada", vendor=vendor,
@@ -326,3 +326,59 @@ def test_selected_bag_is_identified_by_refusals_without_spending_or_queueing(bag
     result = cli.run("--bag", "acceptance", "read")
     assert result.returncode != 0 and "bag acceptance" in result.stderr
     assert "stop and ask the human" in result.stderr and cli.named.read_text() == "not json\n"
+
+
+@pytest.mark.parametrize("case", ["default", "named"])
+def test_not_joined_refusal_names_the_bag_once(bag_cli, case):
+    cli = bag_cli
+    selector = "acceptance" if case == "named" else "default"
+    if case == "named":
+        ok(cli.run("--bag", "acceptance", "open"))
+    result = cli.run("--bag", selector, "send", "@bob", "hello", peer="ada")
+    assert result.returncode == 1
+    assert result.stderr == (
+        f"postbag: in bag {selector}: this session has not joined, "
+        f"run postbag --bag {selector} join codex; stop and ask the human\n"
+    )
+
+
+def refused_control_path(cli, args, extra=None):
+    result = cli.run(*args, peer="ada", extra=extra)
+    assert result.returncode == 1
+    assert result.stderr == "postbag: a bag path must not contain control characters; stop and ask the human\n"
+    assert not (cli.home / ".postbag").exists() and not cli.capture.exists()
+    return result
+
+
+@pytest.mark.parametrize("control", ["\n", "\t", "\x7f"])
+def test_bag_path_with_control_character_refuses_before_any_io(bag_cli, control):
+    cli = bag_cli
+    path = cli.cwd / f"secret-dir{control}tail" / "history.jsonl"
+    for args in (("open",), ("join", "codex", "ada"), ("send", "@bob", "hello"), ("read",)):
+        refused_control_path(cli, ("--bag", str(path), *args))
+    assert not (cli.cwd / "secret-dir").exists() and not list(cli.cwd.iterdir())
+
+
+def test_environment_path_with_control_character_refuses_unless_overridden(bag_cli):
+    cli = bag_cli
+    extra = {"POSTBAG_LEDGER": "env-dir\nhistory.jsonl"}
+    for args in (("open",), ("read",)):
+        refused_control_path(cli, args, extra)
+    assert not list(cli.cwd.iterdir())
+    assert ok(cli.run("--bag", "acceptance", "open", "--limit", "3", extra=extra)) == (
+        "exchange open: 3 letters in bag acceptance\n"
+    )
+    assert cli.named.is_file() and not list(cli.cwd.iterdir())
+
+
+def test_bag_path_with_space_and_apostrophe_is_allowed_and_quoted(bag_cli):
+    cli = bag_cli
+    path = cli.cwd / "ada's bags" / "review one.jsonl"
+    prepare(cli, str(path), {})
+    assert ok(cli.run("--bag", str(path), "send", "@bob", "Please reply.", peer="ada")) == (
+        f"letter 1 of 2 in exchange 1 delivered to @bob in bag {path}, 1 left\n"
+    )
+    envelope = rows(cli.capture)[-1][-1]
+    quoted = "'" + str(path).replace("'", "'\\''") + "'"
+    assert f"\npostbag --bag {quoted} send @ada - <<'POSTBAG'\n" in envelope
+    assert shlex.split(f"postbag --bag {quoted} send @ada -") == ["postbag", "--bag", str(path), "send", "@ada", "-"]

@@ -87,7 +87,8 @@ holds another, the refusal says so. A door whose name was
 taken learns it at its next `send`, which refuses. A reply command names
 a name, not a door: it reaches whoever holds the name when it runs. Names
 print with `@`; `send` accepts them with or without it. A bag name follows
-the same grammar; `default` is reserved.
+the same grammar; `default` is reserved. A bag path must contain no
+control characters.
 
 ## The same words as Claude Code
 

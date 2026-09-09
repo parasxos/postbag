@@ -180,7 +180,7 @@ def test_sender_must_have_joined_even_with_complete_vendor_environment(bag, sess
     exchange(bag, session)
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "not registered"))
-    assert f"this session has not joined bag {expected_bag_label()}, run {expected_bag_command('join codex')}" in error
+    assert f"this session has not joined, run {expected_bag_command('join codex')}" in error
 
 
 def test_a_displaced_sender_whose_name_nobody_holds_learns_it_was_released(bag, session):
