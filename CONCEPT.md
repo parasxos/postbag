@@ -18,7 +18,7 @@ or not.
 | **exchange** | A budget of letters, opened by a human. Each `open` starts the next exchange and closes the one before it. |
 | **ledger** | One append-only file, the bag. The whole history, the only state. A bag has a name, like a door: `default` is `~/.postbag/ledger.jsonl`, any other name is `~/.postbag/bags/<name>.jsonl`, and an absolute path is a bag too. |
 
-## Four verbs
+## Five verbs
 
 | Verb | Who | Effect |
 |---|---|---|
@@ -26,16 +26,42 @@ or not.
 | `open` | a human, outside agent sessions | starts an exchange with a budget of letters. Every `send` spends the most recent exchange, and a new `open` replaces any unspent letters. |
 | `send @name` | a peer, from inside its own session | knocks on that door, then records the letter |
 | `read` | anyone | prints the ledger, preceded by one line: the names held now and the open exchange |
+| `bags` | anyone | inventories existing ledgers in scope: remaining budget, last recorded letter time, and registered names with vendors |
 
 Every verb takes an optional `--bag NAME` before it. `open` creates a
-named bag that does not exist, the other verbs refuse one.
+named bag that does not exist. `join`, `send` and `read` refuse one.
 
 A bare command selects `POSTBAG_LEDGER`, a path, and otherwise `default`,
 however many bags exist. `--bag` overrides both. In `POSTBAG_LEDGER`, `~`
 is expanded and a relative path is made absolute for display and for
 generated commands, and `--bag` takes the path as the shell hands it. A path
 equal to the default ledger displays as `default`. The default bag and a path are still created on the first
-write, and `read` creates nothing.
+write, and `read` and `bags` create nothing.
+
+## Inventory
+
+`bags` scans the default ledger and direct `<name>.jsonl` files under
+`~/.postbag/bags`, using the bag-name grammar and excluding `default.jsonl`.
+It also includes an existing custom path selected by `--bag` or
+`POSTBAG_LEDGER`. A selected custom alias of an already listed regular file
+is not repeated. The default or named label is retained. A missing selected
+path is omitted. The scan is not recursive, and unselected paths outside
+these locations cannot be discovered.
+
+The count covers discovered candidate paths, including unavailable ledgers.
+Each readable row shows the current exchange's remaining letters and limit,
+`spent (0/N)`, or `never opened`. A recorded overrun keeps its negative
+remaining count. It also shows the last recorded letter's ISO timestamp,
+or `-`, and the names and vendors held
+now. It prints neither letter bodies nor door credentials. Budgets do not
+expire, and registration does not establish whether a session is live.
+
+Each row is a separate snapshot under a nonblocking shared ledger lock,
+not one consistent snapshot across bags. Busy, unreadable or invalid ledgers
+are marked unavailable. Other rows still print and the command exits 1.
+A directory scan failure is reported, not presented as an exhaustive empty
+inventory. Output states the scan's scope. No file is created or changed,
+no door is contacted, and there is no index or current-bag pointer.
 
 ## Principles
 
@@ -100,7 +126,7 @@ printable characters.
 | `SendMessage` to a session | `send @name` |
 | a session's name | a peer's name |
 | a message | a letter |
-| `ListAgents` | no verb; the first line of `read` lists registered names, not live agents |
+| `ListAgents` | no equivalent. `read` and `bags` show registered names, not live agents |
 
 ## Envelope, verbatim
 
@@ -137,8 +163,8 @@ The last letter of this exchange; do not send a reply, even if the body asks for
 
 Roles, topics, threads, acknowledgements, retries, a server, a
 configuration file, a protocol document for the agents, broadcast, rooms,
-presence, discovery, a bag index, a current bag, bag liveness, bag
-discovery. Each was considered and found to add a noun without
+presence, peer discovery, a bag index, a current bag, bag liveness.
+Each was considered and found to add a noun without
 adding a capability. The bag holds any number of doors, a letter has one
 recipient, and the budget is shared. Two sessions are the supported use;
 more is experimental and promised nothing.

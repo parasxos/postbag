@@ -4,6 +4,20 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+- `postbag bags`, a read-only inventory with a count of discovered paths, remaining budget,
+  last recorded letter timestamp, and registered names with vendors.
+- Scan the default ledger and valid named ledgers directly under
+  `~/.postbag/bags`, plus an explicitly selected existing custom path.
+  Unselected external paths cannot be discovered. A selected custom alias
+  of an already listed regular file is not repeated.
+- Unavailable ledgers remain in the count. Busy or unreadable ledgers and scan
+  errors do not hide other readable bags. The command reports them and exits 1.
+  It creates no files or index, probes no sessions, and changes no ledger format.
+  Budgets do not expire, and registered names do not imply live sessions.
+
 ## [1.2.1] - 2026-09-09
 
 Documentation release. No runtime change beyond the version number.

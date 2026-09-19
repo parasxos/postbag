@@ -74,12 +74,17 @@ same flag, `postbag --bag acceptance join claude ada` and
 
 `--bag` goes before the verb and takes a name, kept in
 `~/.postbag/bags/<name>.jsonl`, or an absolute path of printable characters.
-Only `open` creates a named bag, the other verbs refuse one that does not
-exist. Each command's output identifies its bag, and every command inside a
+Only `open` creates a named bag. `join`, `send` and `read` refuse a missing
+one. Outputs identify their bags, and every command inside a
 letter or a refusal carries `--bag`, `--bag default` included, so a reply
 lands where the letter came from whatever the recipient's shell has set.
-`ls ~/.postbag/bags` lists them. Without `--bag`, `POSTBAG_LEDGER` selects a
-ledger by path.
+Without `--bag`, `POSTBAG_LEDGER` selects a ledger by path.
+
+Run `postbag bags` for a count of paths found, remaining budgets, last recorded
+letter times, and registered names with vendors. It scans default and named
+bags, plus an existing custom path selected by `--bag` or `POSTBAG_LEDGER`.
+Unselected external paths cannot be listed. Unreadable or busy bags appear
+as unavailable. Budgets do not expire. Registered names do not imply live sessions.
 
 ## How it works
 
@@ -95,8 +100,8 @@ no polling, no hooks, no server, no config file, no bag index.
 ## Security and limits
 
 - A ledger holds every Claude session token and every letter in its bag.
-  Writes keep the file `0600` and new state directories `0700`. `read` hides
-  the door fields, `cat` does not. Keep raw files out of git and logs.
+  Writes keep the file `0600` and new state directories `0700`. `read` and
+  `bags` hide door credentials. Keep raw files out of git and logs.
 - A letter becomes a user turn in the recipient session, so trust both with
   the task. postbag itself sends nothing off the machine, the vendor sessions
   forward the letter to their model services like any prompt.

@@ -20,9 +20,11 @@ can be registered. Writes keep the file `0600` and new state directories
 Anyone who can read that file can write user turns into any registered
 Claude session while it runs.
 
-`postbag read` hides door credentials and prints each name's vendor on
-purpose. `cat` hides nothing. Keep the ledger out of git, issues, logs and
-screenshots.
+`postbag read` and `postbag bags` hide door credentials and print registered
+names and vendors on purpose. Inventory also shows remaining budgets and
+last recorded letter timestamps, but no letter bodies. It reads ledgers
+without contacting sessions. Registration does not establish liveness.
+`cat` hides nothing. Keep the ledger out of git, issues, logs and screenshots.
 
 ## What a letter can do
 
