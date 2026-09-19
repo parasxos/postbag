@@ -4,7 +4,7 @@
 
 Two agents on one machine talk the way two people in adjacent offices do.
 One writes a letter and slides it under the other's door. The door is
-whatever wakes that agent natively. Every letter goes into one bag.
+the vendor's native input to that agent. Every letter goes into one bag.
 Nothing else exists. Any two sessions can correspond, of the same vendor
 or not.
 
@@ -80,7 +80,8 @@ timestamps, without styling.
    name in the bag; none or several refuse. A shell inside two vendors'
    sessions says which door it registers at `join`.
 2. **The door is native.** No daemon, no polling, no hooks. Delivery
-   uses the mechanism each vendor built to reach its own agent.
+   uses the mechanism each vendor built to reach its own agent. The
+   recipient's permissions still apply.
 3. **The letter teaches its reader how to answer.** Each delivered
    letter begins with its number in the exchange, its sender and its
    recipient, and the shared budget. Then comes the body. A non-final
@@ -91,10 +92,11 @@ timestamps, without styling.
 4. **The ledger is the truth.** The ledger records completed sends: a
    letter is in it iff it was delivered and then recorded. Delivered means
    submitted through the door, the socket write returned or `codex queue`
-   exited 0. Neither door acknowledges, and neither proves the agent read
-   it. Submission and recording are two steps, not one; a crash between
-   them leaves a submitted letter unrecorded, and the next letter may carry
-   the same number. Doors, names and budgets are read from the ledger,
+   exited 0. postbag does not read delivery notices or wait for an
+   acknowledgement. Submission does not prove the recipient accepted, read
+   or acted on the letter. Submission and recording are separate steps. A
+   crash between them leaves a submitted letter unrecorded. The next letter
+   may carry the same number. Doors, names and budgets are read from the ledger,
    never from anywhere else. Names are read by replaying the joins in
    order: each join drops the earlier holder of that name and the earlier
    name of that door, and what remains is the bag. History is a file you
