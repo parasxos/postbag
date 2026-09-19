@@ -17,6 +17,7 @@ import socket
 import stat
 import subprocess
 import sys
+import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
@@ -468,6 +469,123 @@ def read(count):
             print(", ".join([f"{line} @{rec['peer']} ({vendor(rec)})", *taken]))
 
 
+def display_width(text):
+    """Terminal cells for printable labels, including wide and combining characters."""
+    return sum(0 if unicodedata.category(c).startswith("M")
+               else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+def wrap_display(text, width, *, words=True):
+    """Wrap before styling. Paths keep every character, including spaces."""
+    width = max(1, width)
+    lines = []
+    while display_width(text) > width:
+        used, end = 0, 0
+        for c in text:
+            size = display_width(c)
+            if used + size > width:
+                break
+            used += size
+            end += 1
+        end = max(1, end)
+        space = text.rfind(" ", 0, end + 1) if words else -1
+        if space > 0:
+            lines.append(text[:space])
+            text = text[space + 1:]
+        else:
+            lines.append(text[:end])
+            text = text[end:]
+    return [*lines, text]
+
+
+def inventory_time(value, now):
+    if value == "-":
+        return "No letters", None
+    stamp = datetime.fromisoformat(value)
+    try:
+        local = stamp.astimezone()  # use the local rules at this date, including legacy naive stamps
+        instant = local.timestamp()
+    except (ValueError, OverflowError, OSError):
+        return value, None  # extreme but valid legacy dates still display, without inventing an age
+    if local > now:
+        return f"{local:%Y-%m-%d %H:%M} (future)", instant
+    days = (now.date() - local.date()).days
+    if days in (0, 1):
+        return f"{'Today' if days == 0 else 'Yesterday'} {local:%H:%M}", instant
+    return f"{local:%Y-%m-%d %H:%M}", instant
+
+
+def terminal_inventory(rows, counts):
+    """A terminal view of the same snapshot. Pipes retain the full plain table."""
+    width = max(1, min(shutil.get_terminal_size().columns, 140))
+    color = "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+
+    def style(text, code):
+        return f"\033[{code}m{text}\033[0m" if color and text else text
+
+    def line(text, code=None, indent=0, words=True):
+        indent = min(indent, max(0, width - 1))
+        for part in wrap_display(text, width - indent, words=words):
+            print(" " * indent + (style(part, code) if code else part))
+
+    line(f"{len(rows)} {'bag' if len(rows) == 1 else 'bags'}", "1")
+    summary = "  /  ".join(f"{counts[key]} {label}" for key, label in (
+        ("remaining", "with letters left"), ("spent", "spent"),
+        ("unopened", "never opened"), ("unavailable", "unavailable")) if counts[key])
+    if summary:
+        line(summary, "2")
+    now = datetime.now().astimezone()
+    dated = [(row, *inventory_time(row[2], now)) for row in rows]
+    dated.sort(key=lambda item: (item[2] is None, -(item[2] or 0), item[0][0]))
+    entries = []
+    for (label, left, _, peers), when, _ in dated:
+        if peers is None:
+            people, when = "Unavailable", "Unknown"
+        elif not peers:
+            people = "No registered peers"
+        else:
+            people = "  /  ".join(
+                f"{source.title()}: " + ", ".join(f"@{peer}" for peer, v in peers if v == source)
+                for source in sorted({v for _, v in peers}))
+        entries.append((label, left, when, people))
+
+    if entries:
+        print()
+    if entries and width >= 100:
+        widths = [min(26, max(3, *(display_width(row[0]) for row in entries))),
+                  min(18, max(12, *(len(row[1]) for row in entries))), 16]
+        widths.append(width - sum(widths) - 6)
+
+        def table_row(row, heading=False):
+            parts = [wrap_display(text, size, words=i != 0)
+                     for i, (text, size) in enumerate(zip(row, widths))]
+            for n in range(max(map(len, parts))):
+                cells = [part[n] if n < len(part) else "" for part in parts]
+                padded = [text + " " * (size - display_width(text))
+                          for text, size in zip(cells[:-1], widths[:-1])]
+                codes = ("1", "1", "1", "1") if heading else (
+                    "1", "33" if row[1] == "unavailable" else "36" if row[1][0].isdigit() else "2",
+                    "2", "")
+                print("  ".join(style(text, code) if code else text
+                                for text, code in zip([*padded, cells[-1]], codes)))
+
+        table_row(("Bag", "Letters left", "Last letter", "Registered peers"), heading=True)
+        print()
+        for row in entries:
+            table_row(row)
+    else:
+        for label, left, when, people in entries:
+            line(label, "1", words=False)
+            budget = f"{left} left" if left[0].isdigit() else left
+            line(f"{budget}  |  Last letter: {when}", "2", indent=2)
+            line(people, indent=2)
+            print()
+    if entries and width >= 100:
+        print()
+    line("Local times. Budgets do not expire. Registered does not mean running.", "2")
+    line("Scope: ~/.postbag + selected custom path if present. Other paths are not listed.", "2")
+
+
 def bags():
     """Inventory existing local ledgers, without storing state or contacting doors."""
     selected = bag()
@@ -537,12 +655,11 @@ def bags():
                 left = f"{state.left}/{state.limit}"
             last = next((datetime.fromisoformat(rec["at"]).isoformat()
                          for rec, *_ in reversed(state.history) if rec["kind"] == "letter"), "-")
-            peers = ", ".join(f"@{peer} ({vendor(rec)})"
-                              for peer, rec in sorted(state.peers.items())) or "none"
+            peers = [(peer, vendor(rec)) for peer, rec in sorted(state.peers.items())]
             rows.append((candidate.label, left, last, peers))
         except (SystemExit, OSError, UnicodeError, ValueError, RecursionError) as e:
             counts["unavailable"] += 1
-            rows.append((candidate.label, "unavailable", "-", "-"))
+            rows.append((candidate.label, "unavailable", "-", None))
             if isinstance(e, SystemExit):
                 problems.append(str(e))
             else:
@@ -553,17 +670,23 @@ def bags():
         finally:
             _selection.reset(token)
 
-    total = len(rows)
-    print(f"{total} {'bag' if total == 1 else 'bags'} found: "
-          f"{counts['remaining']} with letters left, {counts['spent']} spent, "
-          f"{counts['unopened']} never opened, {counts['unavailable']} unavailable.")
-    table = [("Bag", "Letters left", "Last letter", "Registered peers"), *rows]
-    widths = [max(len(row[i]) for row in table) for i in range(3)]
-    for row in table:
-        print(" | ".join([*(row[i].ljust(widths[i]) for i in range(3)), row[3]]))
-    print(f"Scope: default and named bags under {default.path.parent}, "
-          "plus the selected custom path if present. Other custom paths are not listed.")
-    print("Budgets do not expire. Registrations do not show whether sessions are running.")
+    if sys.stdout.isatty():
+        terminal_inventory(rows, counts)
+    else:
+        total = len(rows)
+        print(f"{total} {'bag' if total == 1 else 'bags'} found: "
+              f"{counts['remaining']} with letters left, {counts['spent']} spent, "
+              f"{counts['unopened']} never opened, {counts['unavailable']} unavailable.")
+        table = [("Bag", "Letters left", "Last letter", "Registered peers"),
+                 *((label, left, last, "-" if peers is None else
+                    ", ".join(f"@{peer} ({source})" for peer, source in peers) or "none")
+                   for label, left, last, peers in rows)]
+        widths = [max(len(row[i]) for row in table) for i in range(3)]
+        for row in table:
+            print(" | ".join([*(row[i].ljust(widths[i]) for i in range(3)), row[3]]))
+        print(f"Scope: default and named bags under {default.path.parent}, "
+              "plus the selected custom path if present. Other custom paths are not listed.")
+        print("Budgets do not expire. Registrations do not show whether sessions are running.")
     if problems:
         print("Inventory incomplete. See the errors below.")
     sys.stdout.flush()  # a closed reader wins over deferred inventory errors, as for read

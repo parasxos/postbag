@@ -80,11 +80,12 @@ letter or a refusal carries `--bag`, `--bag default` included, so a reply
 lands where the letter came from whatever the recipient's shell has set.
 Without `--bag`, `POSTBAG_LEDGER` selects a ledger by path.
 
-Run `postbag bags` for a count of paths found, remaining budgets, last recorded
-letter times, and registered names with vendors. It scans default and named
-bags, plus an existing custom path selected by `--bag` or `POSTBAG_LEDGER`.
-Unselected external paths cannot be listed. Unreadable or busy bags appear
-as unavailable. Budgets do not expire. Registered names do not imply live sessions.
+Run `postbag bags` for a count of paths found, remaining budgets, last letter
+times and registered names with vendors. It lists default, named and selected
+custom bags. Unselected external paths are omitted. Busy or unreadable bags
+are unavailable. Budgets do not expire. Registered names do not imply live sessions.
+Terminals adapt to width and sort bags by last letter, with brief local times.
+Pipes keep the plain table and full ISO timestamps.
 
 ## How it works
 

@@ -17,6 +17,10 @@ uses [Semantic Versioning](https://semver.org/).
   errors do not hide other readable bags. The command reports them and exits 1.
   It creates no files or index, probes no sessions, and changes no ledger format.
   Budgets do not expire, and registered names do not imply live sessions.
+- Terminal inventory adapts to width, groups peers by vendor and orders bags
+  by their last recorded letter. It uses brief local times and optional styling.
+  Piped output keeps the original table, order and full ISO timestamps.
+  `NO_COLOR` or `TERM=dumb` disables terminal styling.
 
 ## [1.2.1] - 2026-09-09
 
