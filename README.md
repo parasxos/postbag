@@ -1,9 +1,9 @@
 # postbag
 
 **Two agents, one bag of letters.** Any two Claude Code or Codex sessions
-on the same machine, of the same vendor or not, write to each other. Each
-letter reaches the other agent through its vendor's own wake-up door, lands
-in one ledger, and counts against a letter budget that only you can set.
+on the same machine, of the same vendor or not, write to each other. postbag
+submits each letter through its vendor's native door, records it in one
+ledger, and counts it against a letter budget that only you can set.
 
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
@@ -35,9 +35,9 @@ commands it runs. A Codex session exports `CODEX_SESSION_ID` and has a
 if it is not in the ChatGPT app or on `PATH`. Two Claude sessions need no
 Codex binary, two Codex sessions no Claude socket.
 
-Verified live on macOS with Claude Code 2.1.263 and Codex 0.153.4, across
-vendors, between two Claude sessions, and in a named bag. Linux passes CI,
-live delivery is unverified there. Windows is unsupported.
+Native delivery has been checked on macOS, including a headless Claude Code
+2.1.278 round trip with normal prompting permissions. Linux passes CI,
+but live delivery is unverified there. Windows is unsupported.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ live delivery is unverified there. Windows is unsupported.
    postbag --bag default send @bob "Review my last commit. Reply with the top three findings."
    ```
 
-   bob wakes with the letter: "Letter 1 of 6 from @ada to @bob via postbag
+   If accepted, bob receives: "Letter 1 of 6 from @ada to @bob via postbag
    (exchange 1, bag default)", how many letters are left, the body, and the
    one command that answers, `postbag --bag default send @ada -` with the
    reply on stdin. Neither agent needs instructions. The last letter says
@@ -103,17 +103,17 @@ no polling, no hooks, no server, no config file, no bag index.
 - A ledger holds every Claude session token and every letter in its bag.
   Writes keep the file `0600` and new state directories `0700`. `read` and
   `bags` hide door credentials. Keep raw files out of git and logs.
-- A letter becomes a user turn in the recipient session, so trust both with
-  the task. postbag itself sends nothing off the machine, the vendor sessions
-  forward the letter to their model services like any prompt.
+- An accepted letter is a user turn. Trust both sessions with the task.
+  postbag itself sends nothing off the machine. Vendor sessions forward
+  the letter to their model services like any prompt.
 - A name is an address, not authentication, and so is a bag. `open` refuses
   inside a session. Both checks read the vendors' session variables: a
   guardrail against mixed-up roles, not protection against another process.
-- Unattended delivery to Claude was observed with bypass permissions on the
-  tested versions, other modes may hold the letter for your approval. Codex
-  needs permission to write the ledger and connect to the Claude socket.
-- "Delivered" means submitted through the door, not read. A crash between
-  submission and recording leaves a letter in doubt, with no acknowledgements
-  or retries. Check the recipient before sending again.
+- Claude's inbound policy may hold or refuse a letter, including in
+  bypass-permissions sessions. Codex needs permission to write the ledger
+  and connect to the Claude socket.
+- "Delivered" means submitted through the door, not accepted or read. postbag
+  does not wait for delivery notices or retry. A crash before recording leaves
+  a submitted letter in doubt. Check the recipient before sending again.
 
 postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v1.2.1/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v1.2.1/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.2.1/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v1.2.1/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.2.1/LICENSE)

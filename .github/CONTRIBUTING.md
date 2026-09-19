@@ -25,7 +25,8 @@ or reach a real session. Keep them fast and stdlib-only.
 - Every refusal goes through `fail()` and ends with "stop and ask the
   human". Tests match on that wording.
 - `send` does budget, knock, then append, all under the ledger lock. A
-  letter exists iff it was delivered and then recorded.
+  letter exists iff it was submitted and then recorded. Recipient permissions
+  still apply. Do not claim sender permissions or consume delivery notices.
 - The envelope text in `envelope()` is the protocol the agents follow.
   Change it and its tests together.
 - Never print door credentials. Inventory also excludes letter bodies.
@@ -42,7 +43,15 @@ Commit subjects are short and imperative.
 2. CI green on `main`.
 3. Native acceptance test, the actual gate: install the release candidate
    in a clean venv and run one two-way exchange between two real sessions,
-   including the spent-budget refusal. Do not tag until it passes.
+   including the spent-budget refusal. Record the actual session runtime
+   versions, OS, recipient permission modes and inbound settings, both
+   directions, and whether human approval was needed. Use independent
+   sessions and record any native own-child classification. Independence
+   alone does not rule out that classification.
+   Preserve recipient policy and do not claim sender permissions to make
+   delivery pass. Distinguish a submitted letter from one visibly received.
+   Keep the evidence in [native compatibility checks](../docs/native-compatibility.md).
+   Do not tag until the native exchange passes.
 4. `git tag v<version> && git push origin v<version>`. The release
    workflow builds the wheel and sdist, checks them, publishes a GitHub
    release with checksums, then publishes those same assets to PyPI

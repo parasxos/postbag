@@ -22,6 +22,15 @@ uses [Semantic Versioning](https://semver.org/).
   Piped output keeps the original table, order and full ISO timestamps.
   `NO_COLOR` or `TERM=dumb` disables terminal styling.
 
+### Changed
+- Clarify that postbag records submission, does not read delivery notices,
+  and does not guarantee recipient acceptance. Claude's inbound policy may
+  hold or refuse a letter even in a bypass-permissions session.
+- Record runtime versions and recipient policy in native acceptance checks,
+  distinguishing live receipt from successful submission.
+- Verify the unchanged native transport between two headless Claude Code
+  2.1.278 sessions on macOS, with separate recipient-policy probes.
+
 ## [1.2.1] - 2026-09-09
 
 Documentation release. No runtime change beyond the version number.
