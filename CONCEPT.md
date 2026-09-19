@@ -51,10 +51,10 @@ these locations cannot be discovered.
 The count covers discovered candidate paths, including unavailable ledgers.
 Each readable row shows the current exchange's remaining letters and limit,
 `spent (0/N)`, or `never opened`. A recorded overrun keeps its negative
-remaining count. It also shows the last recorded letter's ISO timestamp,
-or `-`, and the names and vendors held
-now. It prints neither letter bodies nor door credentials. Budgets do not
-expire, and registration does not establish whether a session is live.
+remaining count. It also shows the last recorded letter's time, or that no
+letter is recorded, and the names and vendors held now. It prints neither
+letter bodies nor door credentials. Budgets do not expire, and registration
+does not establish whether a session is live.
 
 Each row is a separate snapshot under a nonblocking shared ledger lock,
 not one consistent snapshot across bags. Busy, unreadable or invalid ledgers
@@ -62,6 +62,15 @@ are marked unavailable. Other rows still print and the command exits 1.
 A directory scan failure is reported, not presented as an exhaustive empty
 inventory. Output states the scan's scope. No file is created or changed,
 no door is contacted, and there is no index or current-bag pointer.
+
+In a terminal, bags with recent recorded letters come first. A table at
+100 columns or wider becomes separate bag blocks in narrower terminals.
+Paths and peer groups wrap without dropping text. Times use the local
+timezone: `Today HH:MM`, `Yesterday HH:MM`, or `YYYY-MM-DD HH:MM`. Future
+timestamps use the absolute date and are marked as future. Status summaries
+omit zero counts. Styling is disabled when `NO_COLOR` is present, even empty,
+or `TERM=dumb`. Piped output keeps the original table, ordering and full ISO
+timestamps, without styling.
 
 ## Principles
 

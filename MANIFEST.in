@@ -4,4 +4,5 @@ include test_postbag.py test_hardening.py test_transports.py
 include test_names.py test_presentation.py
 include test_bags.py test_bag_context.py
 include test_inventory.py
+include test_inventory_terminal.py
 include docs/demo.tape docs/demo-env.sh docs/readme-research.md

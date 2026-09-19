@@ -208,7 +208,10 @@ def _fake_codex(tmp_path, script):
 def test_codex_door_output_is_never_read(bag, be, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(postbag, "KNOCK", {"claude": postbag.KNOCK["claude"], "codex": postbag.knock_codex})
     be("claude"); bag.join("claude")
-    be("codex"); bag.join("codex")
+    private_thread = "private-codex-door-sentinel-7e2d"
+    be("codex")
+    monkeypatch.setenv("CODEX_SESSION_ID", private_thread)
+    bag.join("codex")
     be(None); bag.open_exchange(3)
     be("claude")
     # undecodable bytes on stderr with exit 0: the letter is delivered and recorded
@@ -219,7 +222,7 @@ def test_codex_door_output_is_never_read(bag, be, monkeypatch, tmp_path, capsys)
     monkeypatch.setenv("POSTBAG_CODEX", _fake_codex(tmp_path, "import sys\nprint('rejected thread', sys.argv[3], file=sys.stderr)\nsys.exit(23)\n"))
     with pytest.raises(SystemExit) as e:
         bag.send("@codex", "two")
-    assert "codex queue exited 23" in str(e.value) and "t-1" not in str(e.value) and "rejected" not in str(e.value)
+    assert "codex queue exited 23" in str(e.value) and private_thread not in str(e.value) and "rejected" not in str(e.value)
     assert bag.records()[-1]["body"] == "one"
 
 
