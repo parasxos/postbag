@@ -1,7 +1,7 @@
 # Contributing
 
 Read [CONCEPT.md](../CONCEPT.md) first. It is short and it is the
-specification. Five nouns, four verbs, one ledger, native doors, a human
+specification. Five nouns, five verbs, one ledger per bag, native doors, a human
 sets the budget. Any two supported sessions, of the same vendor or not, are
 the supported use. Three or more is experimental. A change that adds a noun
 has to name the capability the existing nouns cannot provide.
@@ -16,8 +16,9 @@ python -m pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-Tests use a temporary `POSTBAG_LEDGER` and fake doors. They must never
-reach a real session. Keep them fast and stdlib-only.
+Tests isolate the default and named-bag directories as well as
+`POSTBAG_LEDGER`, and use fake doors. They must never scan the user's bags
+or reach a real session. Keep them fast and stdlib-only.
 
 ## Change
 
@@ -27,7 +28,9 @@ reach a real session. Keep them fast and stdlib-only.
   letter exists iff it was delivered and then recorded.
 - The envelope text in `envelope()` is the protocol the agents follow.
   Change it and its tests together.
-- Never print a door field other than the peer name.
+- Never print door credentials. Inventory also excludes letter bodies.
+- `bags` adds no state and probes no sessions. It skips waiting on a busy
+  ledger, reports unavailable bags, continues the inventory, and exits 1.
 - Legacy ledgers must keep reading.
 
 Commit subjects are short and imperative.

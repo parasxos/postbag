@@ -5,6 +5,7 @@
     postbag open [--limit N]      # a human opens one shared letter budget
     postbag send @bob "text"      # send from this session's registered name; "-" reads stdin
     postbag read [N]              # the ledger, or its last N records
+    postbag bags                  # local bags, their budgets and registered peers
 """
 import argparse
 import fcntl
@@ -155,7 +156,7 @@ def check(rec, i, path):
         fail(f"ledger line {i} is not a record ({path})")
 
 
-def records():
+def records(*, wait=True, missing_ok=True):
     path = ledger_path()
     if _held is not None:
         _held.seek(0)
@@ -164,6 +165,8 @@ def records():
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         except FileNotFoundError:
+            if not missing_ok:
+                raise
             if bag().named:
                 bag().missing()
             return []
@@ -173,7 +176,7 @@ def records():
             os.close(fd)
             fail(f"the ledger is not a regular file ({path})")
         with os.fdopen(fd, encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_SH)
+            fcntl.flock(f, fcntl.LOCK_SH | (0 if wait else fcntl.LOCK_NB))
             text = f.read()
     if text and not text.endswith("\n"):
         fail(f"ledger is truncated after line {text.count(chr(10))}, inspect its last record before repairing it ({path})")
@@ -465,6 +468,111 @@ def read(count):
             print(", ".join([f"{line} @{rec['peer']} ({vendor(rec)})", *taken]))
 
 
+def bags():
+    """Inventory existing local ledgers, without storing state or contacting doors."""
+    selected = bag()
+    default = Bag("default")
+    directory = default.path.parent / "bags"
+    candidates = {}
+    problems = []
+
+    def problem(label, why):
+        try:
+            fail(f"{label}: {why}", context=False)
+        except SystemExit as e:
+            problems.append(str(e))
+
+    def include(candidate):
+        if candidate.path in candidates:
+            return
+        try:
+            info = candidate.path.lstat()  # keep symlinks and special files visible, but never read them
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            problem(f"in bag {candidate.label}", f"cannot inspect the ledger ({e.strerror})")
+        else:
+            if stat.S_ISREG(info.st_mode):
+                for path in candidates:
+                    try:
+                        other = path.lstat()
+                    except OSError:
+                        continue
+                    if stat.S_ISREG(other.st_mode) and (info.st_dev, info.st_ino) == (other.st_dev, other.st_ino):
+                        return  # a selected alias of an already listed file, without resolving symlinks
+            candidates[candidate.path] = candidate
+
+    include(default)
+    try:
+        try:
+            entries = os.scandir(directory)
+        except FileNotFoundError:
+            entries = None
+        if entries is not None:
+            with entries:
+                for entry in entries:
+                    if entry.name.endswith(".jsonl"):
+                        label = entry.name[:-6]
+                        if label != "default" and valid_name(label):
+                            candidate = Bag(label)
+                            candidates[candidate.path] = candidate
+    except OSError as e:
+        problem(f"in {directory}", f"cannot list named bags ({e.strerror})")
+    include(selected)
+
+    rows = []
+    counts = dict(remaining=0, spent=0, unopened=0, unavailable=0)
+    for candidate in sorted(candidates.values(), key=lambda c: (c.label != "default", c.label)):
+        token = _selection.set(candidate)
+        try:
+            state = Snapshot(records(wait=False, missing_ok=False))
+            if state.left is None:
+                counts["unopened"] += 1
+                left = "never opened"
+            elif state.left <= 0:
+                counts["spent"] += 1
+                left = f"spent ({state.left}/{state.limit})"
+            else:
+                counts["remaining"] += 1
+                left = f"{state.left}/{state.limit}"
+            last = next((datetime.fromisoformat(rec["at"]).isoformat()
+                         for rec, *_ in reversed(state.history) if rec["kind"] == "letter"), "-")
+            peers = ", ".join(f"@{peer} ({vendor(rec)})"
+                              for peer, rec in sorted(state.peers.items())) or "none"
+            rows.append((candidate.label, left, last, peers))
+        except (SystemExit, OSError, UnicodeError, ValueError, RecursionError) as e:
+            counts["unavailable"] += 1
+            rows.append((candidate.label, "unavailable", "-", "-"))
+            if isinstance(e, SystemExit):
+                problems.append(str(e))
+            else:
+                why = ("the ledger is busy" if isinstance(e, BlockingIOError)
+                       else f"cannot read the ledger ({e.strerror})" if isinstance(e, OSError)
+                       else "the ledger is not valid UTF-8 JSON")
+                problem(f"in bag {candidate.label}", why)
+        finally:
+            _selection.reset(token)
+
+    total = len(rows)
+    print(f"{total} {'bag' if total == 1 else 'bags'} found: "
+          f"{counts['remaining']} with letters left, {counts['spent']} spent, "
+          f"{counts['unopened']} never opened, {counts['unavailable']} unavailable.")
+    table = [("Bag", "Letters left", "Last letter", "Registered peers"), *rows]
+    widths = [max(len(row[i]) for row in table) for i in range(3)]
+    for row in table:
+        print(" | ".join([*(row[i].ljust(widths[i]) for i in range(3)), row[3]]))
+    print(f"Scope: default and named bags under {default.path.parent}, "
+          "plus the selected custom path if present. Other custom paths are not listed.")
+    print("Budgets do not expire. Registrations do not show whether sessions are running.")
+    if problems:
+        print("Inventory incomplete. See the errors below.")
+    sys.stdout.flush()  # a closed reader wins over deferred inventory errors, as for read
+    for message in problems:
+        print(message, file=sys.stderr)
+    if problems:
+        raise SystemExit(1)
+
+
 # cli ------------------------------------------------------------------------
 
 def positive(text):
@@ -508,10 +616,12 @@ def cli(argv):
     s.add_argument("to", help="the recipient's name, with or without @")
     s.add_argument("body", help='the text, or "-" to read it from stdin')
     sub.add_parser("read").add_argument("count", nargs="?", type=positive, help="only the last N records")
+    sub.add_parser("bags", help="list local bags without contacting sessions",
+                   description="List the default and named bags, plus an existing selected custom path.")
     a = p.parse_args(argv)
     try:
         _selection.set(bag())  # Freeze the environment's path before any I/O or delivery.
-        if a.verb != "open":
+        if a.verb not in ("open", "bags"):
             bag().require_existing()
         run(a)
         sys.stdout.flush()
@@ -530,8 +640,10 @@ def run(a):
         open_exchange(a.limit)
     elif a.verb == "send":
         send(a.to, sys.stdin.read().rstrip("\n") if a.body == "-" else a.body)
-    else:
+    elif a.verb == "read":
         read(a.count)
+    else:
+        bags()
 
 
 if __name__ == "__main__":
