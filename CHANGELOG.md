@@ -7,6 +7,9 @@ uses [Semantic Versioning](https://semver.org/).
 ## Unreleased
 
 ### Added
+- `postbag bags --resume` shows Claude resume commands using optional conversation
+  IDs recorded at `join`. These snapshots do not change door identity or routing.
+  Older or invalid metadata shows unknown; ordinary inventory stays unchanged.
 - `postbag bags`, a read-only inventory with a count of discovered paths, remaining budget,
   last recorded letter timestamp, and registered names with vendors.
 - Scan the default ledger and valid named ledgers directly under

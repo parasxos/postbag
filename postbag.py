@@ -27,6 +27,7 @@ __version__ = "1.2.1"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
+SESSION_ID = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
 SESSION = {  # door field -> the variable each vendor exports inside its own session
     "claude": {"socket": "CLAUDE_CODE_MESSAGING_SOCKET", "token": "CLAUDE_CODE_MESSAGING_TOKEN"},
     "codex": {"thread": "CODEX_SESSION_ID"},
@@ -115,6 +116,11 @@ def vendor(rec):
 def identity(rec):
     kind = vendor(rec)
     return (kind, *(rec[field] for field in SESSION[kind]))
+
+
+def session_id(value):
+    """Optional navigation metadata, never a door or a shell fragment."""
+    return value.lower() if isinstance(value, str) and SESSION_ID.fullmatch(value) else None
 
 
 # ledger ---------------------------------------------------------------------
@@ -396,6 +402,9 @@ def join(source, peer=None):
         state = Snapshot(records())
         rec = record("join", peer=peer, vendor=source,
                      **{field: os.environ[var] for field, var in SESSION[source].items()})
+        conversation = session_id(os.environ.get("CLAUDE_CODE_SESSION_ID")) if source == "claude" else None
+        if conversation:
+            rec["session_id"] = conversation
         renamed, taken = state.register(rec)
         write(rec)
     print(", ".join([f"@{peer} ({source}) joined in bag {bag().label}", *notes(renamed, taken, where)]))
@@ -515,7 +524,15 @@ def inventory_time(value, now):
     return f"{local:%Y-%m-%d %H:%M}", instant
 
 
-def terminal_inventory(rows, counts):
+def print_resumes(peers):
+    for peer, conversation in peers:
+        print(f"  @{peer} — conversation at join:")
+        # Keep a command on one physical line so copying a narrow terminal works.
+        print(f"    claude --resume {conversation}" if conversation else
+              "    Unknown — ask this peer to rejoin.")
+
+
+def terminal_inventory(rows, counts, resumptions=None):
     """A terminal view of the same snapshot. Pipes retain the full plain table."""
     width = max(1, min(shutil.get_terminal_size().columns, 140))
     color = "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
@@ -551,7 +568,7 @@ def terminal_inventory(rows, counts):
 
     if entries:
         print()
-    if entries and width >= 100:
+    if entries and width >= 100 and resumptions is None:
         widths = [min(26, max(3, *(display_width(row[0]) for row in entries))),
                   min(18, max(12, *(len(row[1]) for row in entries))), 16]
         widths.append(width - sum(widths) - 6)
@@ -579,14 +596,16 @@ def terminal_inventory(rows, counts):
             budget = f"{left} left" if left[0].isdigit() else left
             line(f"{budget}  |  Last letter: {when}", "2", indent=2)
             line(people, indent=2)
+            if resumptions is not None:
+                print_resumes(resumptions.get(label, []))
             print()
-    if entries and width >= 100:
+    if entries and width >= 100 and resumptions is None:
         print()
     line("Local times. Budgets do not expire. Registered does not mean running.", "2")
     line("Scope: ~/.postbag + selected custom path if present. Other paths are not listed.", "2")
 
 
-def bags():
+def bags(resume=False):
     """Inventory existing local ledgers, without storing state or contacting doors."""
     selected = bag()
     default = Bag("default")
@@ -639,6 +658,7 @@ def bags():
     include(selected)
 
     rows = []
+    resumptions = {}
     counts = dict(remaining=0, spent=0, unopened=0, unavailable=0)
     for candidate in sorted(candidates.values(), key=lambda c: (c.label != "default", c.label)):
         token = _selection.set(candidate)
@@ -657,6 +677,10 @@ def bags():
                          for rec, *_ in reversed(state.history) if rec["kind"] == "letter"), "-")
             peers = [(peer, vendor(rec)) for peer, rec in sorted(state.peers.items())]
             rows.append((candidate.label, left, last, peers))
+            if resume:
+                resumptions[candidate.label] = [
+                    (peer, session_id(rec.get("session_id")))
+                    for peer, rec in sorted(state.peers.items()) if vendor(rec) == "claude"]
         except (SystemExit, OSError, UnicodeError, ValueError, RecursionError) as e:
             counts["unavailable"] += 1
             rows.append((candidate.label, "unavailable", "-", None))
@@ -671,7 +695,7 @@ def bags():
             _selection.reset(token)
 
     if sys.stdout.isatty():
-        terminal_inventory(rows, counts)
+        terminal_inventory(rows, counts, resumptions if resume else None)
     else:
         total = len(rows)
         print(f"{total} {'bag' if total == 1 else 'bags'} found: "
@@ -684,9 +708,15 @@ def bags():
         widths = [max(len(row[i]) for row in table) for i in range(3)]
         for row in table:
             print(" | ".join([*(row[i].ljust(widths[i]) for i in range(3)), row[3]]))
+            if resume:
+                print_resumes(resumptions.get(row[0], []))
         print(f"Scope: default and named bags under {default.path.parent}, "
               "plus the selected custom path if present. Other custom paths are not listed.")
         print("Budgets do not expire. Registrations do not show whether sessions are running.")
+    if resume:
+        note = "Resume opens saved history, not the current terminal. Rejoin after /clear or switching conversations."
+        for part in wrap_display(note, shutil.get_terminal_size().columns) if sys.stdout.isatty() else [note]:
+            print(part)
     if problems:
         print("Inventory incomplete. See the errors below.")
     sys.stdout.flush()  # a closed reader wins over deferred inventory errors, as for read
@@ -739,8 +769,9 @@ def cli(argv):
     s.add_argument("to", help="the recipient's name, with or without @")
     s.add_argument("body", help='the text, or "-" to read it from stdin')
     sub.add_parser("read").add_argument("count", nargs="?", type=positive, help="only the last N records")
-    sub.add_parser("bags", help="list local bags without contacting sessions",
+    b = sub.add_parser("bags", help="list local bags without contacting sessions",
                    description="List the default and named bags, plus an existing selected custom path.")
+    b.add_argument("--resume", action="store_true", help="show Claude resume commands for conversations recorded at join")
     a = p.parse_args(argv)
     try:
         _selection.set(bag())  # Freeze the environment's path before any I/O or delivery.
@@ -766,7 +797,7 @@ def run(a):
     elif a.verb == "read":
         read(a.count)
     else:
-        bags()
+        bags(a.resume)
 
 
 if __name__ == "__main__":
