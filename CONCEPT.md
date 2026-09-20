@@ -74,8 +74,9 @@ timestamps, without styling.
 
 Claude `join` also records `CLAUDE_CODE_SESSION_ID` when it is a valid UUID.
 This optional `session_id` is navigation metadata, never part of the door.
-`bags --resume` shows a copyable command for the conversation at the latest
-join, or an unknown/rejoin hint when that join has no valid ID. It reads no
+`bags --resume` keeps the inventory layout and adds a copyable command below
+each bag for conversations with valid IDs at the latest join. Missing IDs get
+one rejoin reminder after the inventory, not one hint per peer. It reads no
 vendor registry or transcripts and does not establish whether history is
 saved. Rejoin after `/clear` or switching conversations. Resume opens saved
 history in a new process, not the current terminal. Ordinary `bags` and
