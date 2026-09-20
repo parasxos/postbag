@@ -5,5 +5,6 @@ include test_names.py test_presentation.py
 include test_bags.py test_bag_context.py
 include test_inventory.py
 include test_inventory_terminal.py
+include test_resume.py
 include docs/demo.tape docs/demo-env.sh docs/readme-research.md
 include docs/native-compatibility.md

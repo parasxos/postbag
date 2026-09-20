@@ -24,6 +24,10 @@ inboxes. The recipient's policy still governs acceptance.
 names and vendors on purpose. Inventory also shows remaining budgets and
 last recorded letter timestamps, but no letter bodies. It reads ledgers
 without contacting sessions. Registration does not establish liveness.
+
+`bags --resume` explicitly shows Claude conversation IDs recorded at `join`,
+with commands to reopen saved history. They are navigation metadata, not
+credentials. It neither looks up sessions nor runs the displayed commands.
 `cat` hides nothing. Keep the ledger out of git, issues, logs and screenshots.
 
 ## What a letter can do

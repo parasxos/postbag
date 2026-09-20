@@ -87,6 +87,10 @@ are unavailable. Budgets do not expire. Registered names do not imply live sessi
 Terminals adapt to width and sort bags by last letter, with brief local times.
 Pipes keep the plain table and full ISO timestamps.
 
+`postbag bags --resume` adds Claude resume commands for conversations recorded
+at `join`. Rejoin after `/clear` or switching conversations; older joins show
+unknown. Resume needs saved history and opens a new process, not the old terminal.
+
 ## How it works
 
 `join` writes the session's door into the ledger under a name: Claude Code's

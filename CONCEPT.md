@@ -72,6 +72,15 @@ omit zero counts. Styling is disabled when `NO_COLOR` is present, even empty,
 or `TERM=dumb`. Piped output keeps the original table, ordering and full ISO
 timestamps, without styling.
 
+Claude `join` also records `CLAUDE_CODE_SESSION_ID` when it is a valid UUID.
+This optional `session_id` is navigation metadata, never part of the door.
+`bags --resume` shows a copyable command for the conversation at the latest
+join, or an unknown/rejoin hint when that join has no valid ID. It reads no
+vendor registry or transcripts and does not establish whether history is
+saved. Rejoin after `/clear` or switching conversations. Resume opens saved
+history in a new process, not the current terminal. Ordinary `bags` and
+`read` do not display this metadata.
+
 ## Principles
 
 1. **The sender is the door, not a flag.** `send` runs inside a session,

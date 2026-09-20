@@ -75,3 +75,16 @@ notices, retry, claim sender permissions, or change the recipient's policy.
 For a future native check, record the actual session runtime versions and
 policy, not just the executable currently installed. Preserve the distinction
 between submission, native receipt, and the recipient's visible response.
+
+## 20 September 2026: recorded conversation resume
+
+An isolated, persisted Claude Code 2.1.278 session ran `join claude reader`
+through its own Bash tool. The join's optional `session_id` matched the
+native result's conversation ID. `bags --resume` printed that exact UUID
+without changing the ledger. Its command, run headlessly from a different
+directory after the first process exited, reopened the same conversation
+and recalled its unique test phrase exactly. No letters were sent.
+
+This verifies capture and cross-project resume for saved history. It does
+not establish that every recorded conversation still exists, or that the
+conversation at join remains current after `/clear` or an in-process switch.
