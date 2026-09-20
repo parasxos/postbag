@@ -526,10 +526,9 @@ def inventory_time(value, now):
 
 def print_resumes(peers):
     for peer, conversation in peers:
-        print(f"  @{peer} — conversation at join:")
-        # Keep a command on one physical line so copying a narrow terminal works.
-        print(f"    claude --resume {conversation}" if conversation else
-              "    Unknown — ask this peer to rejoin.")
+        if conversation:
+            # Keep a command on one physical line so copying a narrow terminal works.
+            print(f"  @{peer} → claude --resume {conversation}")
 
 
 def terminal_inventory(rows, counts, resumptions=None):
@@ -550,7 +549,7 @@ def terminal_inventory(rows, counts, resumptions=None):
         ("remaining", "with letters left"), ("spent", "spent"),
         ("unopened", "never opened"), ("unavailable", "unavailable")) if counts[key])
     if summary:
-        line(summary, "2")
+        line(summary)
     now = datetime.now().astimezone()
     dated = [(row, *inventory_time(row[2], now)) for row in rows]
     dated.sort(key=lambda item: (item[2] is None, -(item[2] or 0), item[0][0]))
@@ -568,7 +567,7 @@ def terminal_inventory(rows, counts, resumptions=None):
 
     if entries:
         print()
-    if entries and width >= 100 and resumptions is None:
+    if entries and width >= 100:
         widths = [min(26, max(3, *(display_width(row[0]) for row in entries))),
                   min(18, max(12, *(len(row[1]) for row in entries))), 16]
         widths.append(width - sum(widths) - 6)
@@ -581,8 +580,8 @@ def terminal_inventory(rows, counts, resumptions=None):
                 padded = [text + " " * (size - display_width(text))
                           for text, size in zip(cells[:-1], widths[:-1])]
                 codes = ("1", "1", "1", "1") if heading else (
-                    "1", "33" if row[1] == "unavailable" else "36" if row[1][0].isdigit() else "2",
-                    "2", "")
+                    "1", "33" if row[1] == "unavailable" else "36" if row[1][0].isdigit() else "",
+                    "", "")
                 print("  ".join(style(text, code) if code else text
                                 for text, code in zip([*padded, cells[-1]], codes)))
 
@@ -590,19 +589,21 @@ def terminal_inventory(rows, counts, resumptions=None):
         print()
         for row in entries:
             table_row(row)
+            if resumptions is not None:
+                print_resumes(resumptions.get(row[0], []))
     else:
         for label, left, when, people in entries:
             line(label, "1", words=False)
             budget = f"{left} left" if left[0].isdigit() else left
-            line(f"{budget}  |  Last letter: {when}", "2", indent=2)
+            line(f"{budget}  |  Last letter: {when}", indent=2)
             line(people, indent=2)
             if resumptions is not None:
                 print_resumes(resumptions.get(label, []))
             print()
-    if entries and width >= 100 and resumptions is None:
+    if entries and width >= 100:
         print()
-    line("Local times. Budgets do not expire. Registered does not mean running.", "2")
-    line("Scope: ~/.postbag + selected custom path if present. Other paths are not listed.", "2")
+    line("Local times. Budgets do not expire. Registered does not mean running.")
+    line("Scope: ~/.postbag + selected custom path if present. Other paths are not listed.")
 
 
 def bags(resume=False):
@@ -714,9 +715,24 @@ def bags(resume=False):
               "plus the selected custom path if present. Other custom paths are not listed.")
         print("Budgets do not expire. Registrations do not show whether sessions are running.")
     if resume:
-        note = "Resume opens saved history, not the current terminal. Rejoin after /clear or switching conversations."
-        for part in wrap_display(note, shutil.get_terminal_size().columns) if sys.stdout.isatty() else [note]:
-            print(part)
+        conversations = [conversation for peers in resumptions.values() for _, conversation in peers]
+        missing = conversations.count(None)
+        known = len(conversations) - missing
+        notes = []
+        if missing:
+            if not known:
+                notes.extend(("No Claude session IDs found in readable bags." if problems else
+                              "No Claude session IDs recorded yet.",
+                              "Ask each Claude session to rejoin its bag to enable resume commands."))
+            else:
+                notes.append(f"{missing} Claude {'peer has' if missing == 1 else 'peers have'} no session ID recorded. "
+                             "Ask peers without a resume command to rejoin their bag.")
+        if known:
+            notes.append("Resume commands use conversation IDs recorded at join and open saved history, "
+                         "not the current terminal. Rejoin after /clear or switching conversations.")
+        for note in notes:
+            for part in wrap_display(note, shutil.get_terminal_size().columns) if sys.stdout.isatty() else [note]:
+                print(part)
     if problems:
         print("Inventory incomplete. See the errors below.")
     sys.stdout.flush()  # a closed reader wins over deferred inventory errors, as for read

@@ -88,8 +88,8 @@ Terminals adapt to width and sort bags by last letter, with brief local times.
 Pipes keep the plain table and full ISO timestamps.
 
 `postbag bags --resume` adds Claude resume commands for conversations recorded
-at `join`. Rejoin after `/clear` or switching conversations; older joins show
-unknown. Resume needs saved history and opens a new process, not the old terminal.
+at `join`, with one reminder for missing IDs. Rejoin after `/clear` or switching
+conversations. Resume needs saved history and opens a new process, not the old terminal.
 
 ## How it works
 

@@ -11,6 +11,7 @@ import threading
 import pytest
 
 from test_inventory import SCRIPT, fingerprint, inventory_cli, joined, opened, seed
+from test_inventory_terminal import NOW, WRAPPER, plain
 
 
 FIRST = "123e4567-e89b-12d3-a456-426614174000"
@@ -41,7 +42,7 @@ def resume(cli):
 
 
 def unknown(text):
-    assert "unknown" in text.lower()
+    assert "session id" in " ".join(text.lower().split())
     assert "rejoin" in text.lower()
 
 
@@ -268,3 +269,97 @@ def test_resume_preserves_inventory_scope_and_does_not_create_missing_bags(inven
     text = succeeded(cli.run("--bag", str(selected), "bags", "--resume"))
     assert sorted(COMMAND.findall(text)) == sorted([FIRST, SECOND])
     assert THIRD not in text
+
+
+def inventory_view(cli, columns):
+    """Run the public resume flag in a pipe or with the shared terminal wrapper."""
+    if columns is None:
+        return cli.run("bags", "--resume")
+    environment = {**cli.environment, "POSTBAG_TEST_TTY": "1", "POSTBAG_TEST_NOW": NOW,
+                   "COLUMNS": str(columns), "TZ": "UTC0", "NO_COLOR": ""}
+    return subprocess.run(
+        [sys.executable, "-c", WRAPPER, str(SCRIPT), "bags", "--resume"],
+        cwd=cli.cwd, env=environment, capture_output=True, text=True, timeout=3,
+    )
+
+
+@pytest.mark.parametrize("columns", [None, 40, 120], ids=["pipe", "narrow", "wide"])
+def test_missing_resume_ids_are_explained_once_without_repeating_peers(inventory_cli, columns):
+    cli = inventory_cli
+    seed(cli.default, opened(4), claude("ada", None, door="first"),
+         claude("cleo", None, door="second"))
+    seed(cli.named / "review.jsonl", claude("dora", None, door="third"))
+    text = plain(succeeded(inventory_view(cli, columns)))
+    unwrapped = " ".join(text.split())
+    assert not COMMAND.search(text)
+    assert "No Claude session IDs recorded yet." in unwrapped
+    assert unwrapped.count("rejoin") == 1
+    assert "Unknown" not in text
+    assert "conversation at join" not in text
+    for peer in ("ada", "cleo", "dora"):
+        assert text.count("@" + peer) == 1
+    if columns == 120:
+        assert re.search(r"Bag\s+Letters left\s+Last letter\s+Registered peers", text)
+    elif columns == 40:
+        assert "Last letter:" in text
+
+
+@pytest.mark.parametrize("columns", [None, 40, 120], ids=["pipe", "narrow", "wide"])
+def test_partial_resume_ids_add_only_copyable_commands_and_one_missing_count(inventory_cli, columns):
+    cli = inventory_cli
+    seed(cli.default, opened(4), claude("ada", FIRST, door="first"),
+         claude("cleo", None, door="second"), joined("bob"))
+    seed(cli.named / "review.jsonl", claude("dora", SECOND, door="third"),
+         claude("eve", None, door="fourth"))
+    text = plain(succeeded(inventory_view(cli, columns)))
+    unwrapped = " ".join(text.split())
+    assert sorted(COMMAND.findall(text)) == sorted([FIRST, SECOND])
+    command_lines = [line.strip() for line in text.splitlines() if COMMAND.search(line)]
+    assert command_lines == [f"@ada → claude --resume {FIRST}", f"@dora → claude --resume {SECOND}"]
+    assert "2 Claude peers have no session ID recorded." in unwrapped
+    assert unwrapped.count("no session ID recorded") == 1
+    assert "saved history" in unwrapped and "join" in unwrapped
+    assert "Unknown" not in text
+    for peer in ("cleo", "eve", "bob"):
+        assert text.count("@" + peer) == 1
+    if columns == 120:
+        assert re.search(r"Bag\s+Letters left\s+Last letter\s+Registered peers", text)
+    lines = text.splitlines()
+    default_row = next(i for i, line in enumerate(lines) if re.match(r"^default(?:\s|$)", line))
+    review_row = next(i for i, line in enumerate(lines) if re.match(r"^review(?:\s|$)", line))
+    assert default_row < next(i for i, line in enumerate(lines) if FIRST in line) < review_row
+    assert review_row < next(i for i, line in enumerate(lines) if SECOND in line)
+
+
+@pytest.mark.parametrize("columns", [None, 40, 120], ids=["pipe", "narrow", "wide"])
+@pytest.mark.parametrize("kind", ["empty", "codex-only"])
+def test_resume_without_claude_peers_has_no_misleading_rejoin_note(inventory_cli, columns, kind):
+    cli = inventory_cli
+    if kind == "codex-only":
+        seed(cli.default, opened(3), joined("bob"))
+    text = plain(succeeded(inventory_view(cli, columns)))
+    unwrapped = " ".join(text.lower().split())
+    assert not COMMAND.search(text)
+    assert "session id" not in unwrapped
+    assert "rejoin" not in unwrapped
+    assert "saved history" not in unwrapped
+    if kind == "empty":
+        assert not (cli.home / ".postbag").exists()
+
+
+def test_resume_missing_count_excludes_unavailable_bags(inventory_cli):
+    cli = inventory_cli
+    seed(cli.default, claude("ada", FIRST, door="first"), claude("cleo", None, door="second"))
+    unavailable = cli.named / "broken.jsonl"
+    seed(unavailable, claude("dora", None, door="third"))
+    with unavailable.open("a", encoding="utf-8") as ledger:
+        ledger.write("not-json\n")
+    before = fingerprint(unavailable)
+    result = inventory_view(cli, 120)
+    assert result.returncode == 1
+    assert "in bag broken" in result.stderr
+    text = plain(result.stdout)
+    assert "1 Claude peer has no session ID recorded." in text
+    assert "Inventory incomplete" in text
+    assert "@dora" not in text
+    assert fingerprint(unavailable) == before
