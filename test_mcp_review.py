@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import select
-import signal
 import subprocess
 import sys
 import time
@@ -122,13 +121,13 @@ def test_worker_killed_after_knock_reports_unknown_and_records_nothing(wire, par
 
 
 class RawServer:
-    """A stdio server driven by hand so the test knows its pid and can find its workers."""
+    """A stdio server driven by hand for raw protocol checks."""
 
-    def __init__(self, wire, tmp_path, name):
+    def __init__(self, wire, tmp_path, name, *, script=SERVER_SCRIPT):
         self.log = tmp_path / f"{name}.stderr"
         self.errors = self.log.open("w", encoding="utf-8")
         self.process = subprocess.Popen(
-            [sys.executable, str(SERVER_SCRIPT)], cwd=tmp_path, env=wire.environment,
+            [sys.executable, str(script)], cwd=tmp_path, env=wire.environment,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.errors,
             text=True, start_new_session=True,
         )
@@ -182,25 +181,6 @@ class RawServer:
     def request(self, method, params):
         return self.response(self.start(method, params))
 
-    def workers(self):
-        listing = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True)
-        found = []
-        for row in listing.stdout.splitlines():
-            parts = row.split(None, 2)
-            if len(parts) == 3 and parts[1] == str(self.process.pid) and parts[2].endswith("--worker"):
-                found.append(int(parts[0]))
-        return found
-
-    def kill_next_worker(self, timeout=15):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            for pid in self.workers():
-                os.kill(pid, signal.SIGKILL)
-                return pid
-            time.sleep(0.005)
-        raise AssertionError("no worker appeared under the server")
-
-
 def outcome(message):
     """The application result out of a raw tools/call response."""
     assert "result" in message, message
@@ -210,27 +190,53 @@ def outcome(message):
 
 
 def test_worker_killed_during_read_and_join_reports_worker_failed_without_state(wire, tmp_path):
-    # A large ledger keeps each worker alive long enough to be found and killed.
-    wire.seed(*([opened(1)] * 100_000))
+    # Kill each operation once at records(), after real dispatch and before any
+    # append. The marker lets later workers run normally without process polling.
+    markers = tmp_path / "worker-crashes"
+    markers.mkdir()
+    worker = tmp_path / "crashing-worker.py"
+    worker.write_text(
+        "import json, os, signal, sys\n"
+        "from pathlib import Path\n"
+        f"sys.path.insert(0, {str(SERVER_SCRIPT.parent)!r})\n"
+        "import postbag_mcp as server\n"
+        "request = json.load(sys.stdin)\n"
+        "real_records = server.postbag.records\n"
+        "def records(*args, **kwargs):\n"
+        f"    marker = Path({str(markers)!r}) / request['operation']\n"
+        "    if request['operation'] in {'read', 'join'} and not marker.exists():\n"
+        "        marker.write_text('entered records\\n', encoding='utf-8')\n"
+        "        os.kill(os.getpid(), signal.SIGKILL)\n"
+        "    return real_records(*args, **kwargs)\n"
+        "server.postbag.records = records\n"
+        "response = server.worker(request)\n"
+        "sys.stdout.buffer.write(json.dumps(response).encode('ascii') + b'\\n')\n",
+        encoding="utf-8",
+    )
+    launcher = tmp_path / "fixture-server.py"
+    launcher.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(SERVER_SCRIPT.parent)!r})\n"
+        "import postbag_mcp as server\n"
+        f"server.__file__ = {str(worker)!r}\n"
+        "server.main()\n",
+        encoding="utf-8",
+    )
+    wire.seed(opened(1))
     before = wire.path().read_bytes()
-    with RawServer(wire, tmp_path, "crash-read-join") as server:
-        pending = server.start("tools/call", {"name": "postbag_read", "arguments": {"limit": 1}})
-        server.kill_next_worker()
-        crashed = outcome(server.response(pending))
-        assert crashed["ok"] is False
-        assert crashed["error_code"] == "worker_failed"
-        assert crashed["submission_state"] is None
+    with RawServer(wire, tmp_path, "crash-read-join", script=launcher) as server:
+        for operation, arguments in (("read", {"limit": 1}), ("join", {"name": "ada"})):
+            crashed = outcome(server.request("tools/call", {
+                "name": f"postbag_{operation}", "arguments": arguments, "_meta": meta(),
+            }))
+            assert crashed["ok"] is False
+            assert crashed["error_code"] == "worker_failed"
+            assert crashed["submission_state"] is None
+            assert (markers / operation).read_text() == "entered records\n"
 
-        pending = server.start("tools/call", {"name": "postbag_join", "arguments": {"name": "ada"},
-                                              "_meta": meta()})
-        server.kill_next_worker()
-        crashed = outcome(server.response(pending))
-        assert crashed["error_code"] == "worker_failed"
-        assert crashed["submission_state"] is None
-
-        survived = server.request("tools/call", {"name": "postbag_read", "arguments": {"limit": 1}})
-        assert survived["result"]["isError"] is False
-        assert survived["result"]["structuredContent"]["data"]["remaining"] == 1
+            survived = server.request("tools/call", {"name": "postbag_read", "arguments": {"limit": 1}})
+            assert survived["result"]["isError"] is False
+            assert survived["result"]["structuredContent"]["data"]["remaining"] == 1
     assert wire.path().read_bytes() == before
     assert wire.calls() == []
     assert FAKE_TOKEN not in server.log.read_text()
