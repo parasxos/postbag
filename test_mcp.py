@@ -322,7 +322,8 @@ def test_budget_exhaustion_and_invalid_text_never_reach_transport(wire):
             assert accepted["submission_state"] == "submitted"
             before = wire.path().read_bytes()
             refused = checked(await client.call_tool("postbag_send", {"to": "bob", "body": "two"}, meta=meta()), ok=False)
-            assert refused["submission_state"] != "submitted"
+            assert refused["error_code"] == "refused"
+            assert refused["submission_state"] == "not_submitted"
             assert wire.path().read_bytes() == before
     asyncio.run(exercise())
     assert len(wire.calls()) == 1
@@ -556,8 +557,16 @@ def test_concurrent_calls_keep_bags_and_callers_separate(wire):
             )
             for result in results[:2]:
                 checked(result)
-            # A simultaneous inventory may report a busy bag, but may not mix identities.
-            assert isinstance(results[2].structured_content, dict)
+            # A simultaneous inventory may report a busy bag, but may not mix identities
+            # or drop rows: every bag stays listed whether or not it was readable.
+            inventory = checked(results[2], ok=not results[2].is_error)
+            assert inventory["error_code"] in (None, "inventory_incomplete")
+            assert inventory["data"]["total"] == 2
+            listed = {row["bag"]: row for row in inventory["data"]["bags"]}
+            assert set(listed) == {"alpha", "beta"}
+            for row in listed.values():
+                assert row["peers"] in (None, [{"name": "ada", "vendor": "codex"}, {"name": "bob", "vendor": "codex"}])
+            assert inventory["ok"] is (not inventory["data"]["errors"])
     asyncio.run(exercise())
     alpha = [row for row in wire.rows("alpha") if row["kind"] == "letter"]
     beta = [row for row in wire.rows("beta") if row["kind"] == "letter"]
@@ -594,11 +603,15 @@ def test_inventory_pagination_and_bad_bag_do_not_hide_healthy_bags(wire):
     async def exercise():
         async with wire.session() as client:
             result = await client.call_tool("postbag_bags", {"limit": 2})
-            data = checked(result, ok=not result.is_error)["data"]
+            partial = checked(result, ok=False)
+            assert partial["error_code"] == "inventory_incomplete"
+            data = partial["data"]
             assert data["total"] == 3 and data["next_offset"] == 2
             assert {row["bag"] for row in data["bags"]} == {"default", "alpha"}
             result = await client.call_tool("postbag_bags", {"limit": 2, "offset": 2})
-            data = checked(result, ok=not result.is_error)["data"]
+            partial = checked(result, ok=False)
+            assert partial["error_code"] == "inventory_incomplete"
+            data = partial["data"]
             assert data["total"] == 3 and data["next_offset"] is None
             assert [row["bag"] for row in data["bags"]] == ["beta"]
             assert data["bags"][0]["peers"] is None
@@ -621,7 +634,9 @@ def test_locked_reads_refuse_and_inventory_preserves_other_bags(wire):
                 reading = checked(await client.call_tool("postbag_read", {"bag": "busy"}), ok=False)
                 assert reading["error_code"] == "ledger_busy"
                 assert reading["submission_state"] is None
-                inventory = checked(await client.call_tool("postbag_bags", {}), ok=False)["data"]
+                partial = checked(await client.call_tool("postbag_bags", {}), ok=False)
+                assert partial["error_code"] == "inventory_incomplete"
+                inventory = partial["data"]
                 assert inventory["total"] == 2
                 rows = {row["bag"]: row for row in inventory["bags"]}
                 assert rows["default"]["peers"] == []
@@ -641,7 +656,9 @@ def test_native_failure_does_not_disclose_vendor_output(wire):
     async def exercise():
         async with wire.session(extra={"POSTBAG_TEST_EXIT": "23"}) as client:
             result = await client.call_tool("postbag_send", {"to": "bob", "body": "rejected"}, meta=meta())
-            checked(result, ok=False)
+            uncertain = checked(result, ok=False)
+            assert uncertain["error_code"] == "submission_unknown"
+            assert uncertain["submission_state"] == "unknown"
             for secret in (THREAD_A, THREAD_B, "private native output"):
                 assert secret not in wire_text(result)
     asyncio.run(exercise())

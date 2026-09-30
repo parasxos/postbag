@@ -4,6 +4,28 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Name MCP tools in recovery guidance and reply instructions for default and
+  named bags. Path-based bags keep their CLI reply command. Recovery identifies
+  whether the caller, recipient, or human must act.
+- Reject malformed Unicode before CLI submission while preserving legacy
+  ledger reads. Handle oversized JSON integers as clean ledger refusals.
+- Report uncertain recording after a flush or fsync failure without claiming
+  that the submitted letter is absent from the ledger.
+- Preserve structured unknown outcomes for malformed or excessively nested
+  worker responses. Warn shared-inbox subagents before they rename a peer.
+- Remove sender inbox and identity fields from the native queue subprocess
+  environment. Private fixtures verify this filtering. Live native acceptance
+  of the filtered environment remains to be run before release.
+
+### Changed
+- Expand failure and cancellation regression coverage, isolate CLI test homes,
+  and test MCP against an installed wheel outside the source checkout.
+- Clarify partial inventory results, recorded-letter budget limits, and
+  full-suite dependency requirements.
+
 ## [1.3.0] - 2026-09-30
 
 MCP tools remove shell-command friction while retaining the existing bag,
@@ -240,6 +262,8 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
+[Unreleased]: https://github.com/parasxos/postbag/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/parasxos/postbag/releases/tag/v1.3.0
 [1.2.1]: https://github.com/parasxos/postbag/releases/tag/v1.2.1
 [1.2.0]: https://github.com/parasxos/postbag/releases/tag/v1.2.0
 [1.1.1]: https://github.com/parasxos/postbag/releases/tag/v1.1.1

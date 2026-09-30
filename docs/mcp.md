@@ -49,7 +49,7 @@ MCP tools run in the server process, outside the agent's command sandbox.
 A read-only command sandbox therefore does not prevent these tools from
 writing the ledger or contacting a recipient. Hosts may approve MCP calls
 automatically according to their tool settings. The human-opened budget
-limits the number of letters; use the host's tool-approval settings if each
+limits recorded letters. Use the host's tool-approval settings if each
 letter should also require confirmation. The recipient keeps its own
 permissions and inbound policy.
 
@@ -132,7 +132,9 @@ remain a CLI feature. Read and inventory calls create no files and probe no
 sessions. Endpoint credentials and conversation IDs are excluded from their
 results. Letter bodies are shared content, so read access still reveals the
 correspondence. Inventory preserves readable rows when another bag is busy
-or corrupt and reports `inventory_incomplete` with those rows.
+or corrupt and reports `inventory_incomplete` with those rows. This is an
+error result (`ok=false`, `isError=true`), with readable rows, pagination,
+and errors retained in both structured content and JSON text.
 
 ## Caller identity
 
@@ -175,6 +177,13 @@ evidence that its session is still running.
 Application outcomes contain `ok`, `error_code`, `submission_state`, `message`,
 and `data`, both as structured content and JSON text. Refusals set MCP
 `isError`. Input schema failures use the SDK's standard MCP error result.
+When a refusal has a recovery action, `data.recovery` identifies the action,
+bag, and actor. Caller actions name `postbag_join` or `postbag_read` in the
+message. A restarted recipient must rejoin from its own session. Opening a
+budget remains a human action and keeps its terminal command. Recovery
+guidance identifies who can resolve the problem and preserves the core's
+stop-and-ask-human rule. It never performs an action or retries a send
+automatically.
 
 | `submission_state` | Meaning |
 |---|---|
@@ -188,28 +197,45 @@ numbers, and remaining budget. A ledger recording failure after successful
 transport reports `recording_failed` and `submitted`. A native timeout,
 partial socket write, nonzero queue exit, or worker crash can report
 `unknown`. An empty ledger tail cannot establish that a letter was not sent.
+Recording happens after native submission. If the process dies or recording
+fails in between, the budget may still show an available letter even though
+native submission already succeeded. A later explicit send can therefore
+take the total native submissions beyond the human-opened limit. Check the recipient
+before deciding whether another send is appropriate. Postbag never retries
+automatically. A failed flush or fsync can also leave a visible record whose
+durability is uncertain.
 
 Each call runs the installed module by absolute path in a fresh subprocess,
 with private stdin and captured stdout and stderr. Worker imports ignore
 the host project's directory and Python environment overrides. Output uses
 ASCII JSON framing independent of the host locale. CLI globals and environment
-cannot cross requests. MCP mutations
-use a nonblocking exclusive ledger lock. A busy ledger reports `ledger_busy`
+cannot cross requests. The parent validates the worker's outer result fields,
+JSON encoding, nesting, and submission state before exposing them to the host.
+Successful sends must report `submitted`. Responses that fail these checks
+become `worker_failed` with state `unknown` for sends. Operation-specific data
+has no separate schema. MCP mutations use a nonblocking exclusive ledger lock.
+A busy ledger reports `ledger_busy`
 before native submission, so it cannot wait silently and send later.
+An unexpected send failure whose position is uncertain reports
+`operation_failed` with state `unknown`, including an unexpected
+`BlockingIOError` outside the ledger-lock refusal.
 
 Cancelling a request does not cancel its worker while the server remains
 alive. Graceful server shutdown waits for workers to finish and record.
+There is no worker deadline that kills a send. A stalled filesystem operation
+can therefore keep a worker and graceful shutdown waiting indefinitely.
 A client can still forcibly terminate the server and its children. A timeout,
 disconnect, forced shutdown, or lost response must therefore be treated as
 an unknown outcome. Never retry automatically.
 
 ## Verification
 
-`test_mcp.py` uses the real SDK and stdio subprocesses with isolated homes,
+The `test_mcp*.py` files use the real SDK and stdio subprocesses with isolated homes,
 fake native executables, and private Unix sockets. It covers current and
 legacy protocol clients, concurrent sends, budget exhaustion, independent
 bags, identity changes, missing metadata, secret redaction, malformed inputs,
-pagination, native failures, and cancellation after a transport side effect.
+pagination, native failures, malformed worker responses, and cancellation
+after a transport side effect.
 
 Run the suite with:
 
@@ -217,6 +243,11 @@ Run the suite with:
 .venv/bin/python -m pip install '.[dev,mcp]'
 .venv/bin/python -m pytest -q
 ```
+
+The `mcp` extra is required for the wire tests. A base-only development
+installation skips them. CI tests the core without that extra, runs the MCP
+suite separately, and runs the wire tests against an installed wheel outside
+the source checkout.
 
 Native runtime evidence and remaining limits are recorded in
 [native-compatibility.md](native-compatibility.md). The installed 1.3.0

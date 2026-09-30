@@ -61,7 +61,8 @@ with the MCP extra passed **48 wire tests** outside the checkout. Wheel and
 source archive metadata and fresh base installations passed. An actual
 published 1.2.1 installation read a fixture ledger containing 1.3.0 MCP joins
 and letters without modification, retaining the correct exhausted budget.
-All 11 candidate CI jobs passed on macOS/Linux and Python 3.10 through 3.14.
+All 11 candidate CI jobs passed. Core jobs ran on macOS/Linux with Python
+3.10, 3.12 and 3.14. MCP jobs ran on both systems with Python 3.10 and 3.14.
 [Candidate CI](https://github.com/parasxos/postbag/actions/runs/36721883077).
 
 Remaining limits: live Claude `/clear` was not exercised; native Linux

@@ -73,8 +73,8 @@ Linux passes CI, but live delivery is unverified there. Windows is unsupported.
 
    If accepted, bob receives: "Letter 1 of 6 from @ada to @bob via postbag
    (exchange 1, bag default)", how many letters are left, the body, and the
-   one command that answers, `postbag --bag default send @ada -` with the
-   reply on stdin. Neither agent needs instructions. The last letter says
+   reply instructions: use `postbag_send` if MCP tools are available, or
+   `postbag --bag default send @ada -` with the reply on stdin. The last letter says
    "do not send a reply", and the next `send` refuses and says stop.
 4. Read the bag from anywhere with `postbag --bag default read`. Its first
    line names the bag, its names and the open exchange, then the records.
@@ -121,6 +121,18 @@ three or more is experimental. A bag is one ledger, the only state. No delivery 
 polling, hooks, or bag index. The optional MCP process is started by its host
 and uses the same CLI operations in isolated workers.
 [CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.3.0/CONCEPT.md) is the whole specification in a page.
+
+## Tests
+
+For a full development test run, install both test dependencies and the MCP extra:
+
+```sh
+python -m pip install -e '.[dev,mcp]'
+python -m pytest -q
+```
+
+Without the `mcp` extra, the wire tests are skipped. Tests use private fixtures
+and fake native doors. See [Contributing](.github/CONTRIBUTING.md).
 
 ## Security and limits
 

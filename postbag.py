@@ -34,6 +34,9 @@ SESSION = {  # door field -> session variable; current_door prefers Codex's conc
     "codex": {"thread": "CODEX_SESSION_ID"},
 }
 MACOS_CODEX = "/Applications/ChatGPT.app/Contents/Resources/codex"
+# Never inherited by the codex child: the sender's own door fields and postbag's selection.
+HIDDEN_FROM_CHILD = ({variable for fields in SESSION.values() for variable in fields.values()}
+                     | {"CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "POSTBAG_LEDGER"})
 
 
 _selection = ContextVar("postbag_selection", default=None)
@@ -70,7 +73,8 @@ class Bag:
         return f"postbag --bag {self.argument} {words}"
 
     def missing(self):
-        fail(f"bag {self.label} does not exist, ask the human to run: {self.command('open')}")
+        fail(f"bag {self.label} does not exist, ask the human to run: {self.command('open')}",
+             recovery={"action": "open", "actor": "human", "bag": self.label})
 
     def require_existing(self):
         if self.named and not self.path.exists():
@@ -94,12 +98,19 @@ def codex_path():
 
 
 class Refusal(SystemExit):
-    """A CLI refusal with submission metadata for programmatic callers."""
+    """A CLI refusal with submission metadata for programmatic callers.
 
-    def __init__(self, message, *, error_code="refused", submission_state="not_submitted"):
+    recovery, when present, names the one step that clears the refusal: an action
+    (join, open or read), who performs it (caller, recipient or human), the bag, and
+    for a join the vendor and name when they are known. The message text stays the
+    contract for humans, and recovery is the same advice for programs.
+    """
+
+    def __init__(self, message, *, error_code="refused", submission_state="not_submitted", recovery=None):
         super().__init__(message)
         self.error_code = error_code
         self.submission_state = submission_state
+        self.recovery = recovery
 
 
 class TransportError(OSError):
@@ -111,10 +122,19 @@ class TransportError(OSError):
         self.submission_state = submission_state
 
 
-def fail(why, *, context=True, error_code="refused", submission_state="not_submitted"):
+def fail(why, *, context=True, error_code="refused", submission_state="not_submitted", recovery=None):
     prefix = f"in bag {bag().label}: " if context else ""
     raise Refusal(f"postbag: {prefix}{why}; stop and ask the human",
-                  error_code=error_code, submission_state=submission_state)
+                  error_code=error_code, submission_state=submission_state, recovery=recovery)
+
+
+def encodable(value):
+    """True when a string is valid Unicode text: no lone surrogates from surrogateescape."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def valid_name(value):
@@ -214,7 +234,7 @@ def records(*, wait=True, missing_ok=True):
     for i, line in enumerate(lines, 1):
         try:
             rec = json.loads(line)
-        except json.JSONDecodeError:
+        except ValueError:  # JSONDecodeError, or a plain ValueError for an integer past the digit limit
             fail(f"ledger line {i} is not a record ({path})")
         check(rec, i, path)
         rows.append(rec)
@@ -257,7 +277,8 @@ def ledger(create=False, *, wait=True):
         try:
             fcntl.flock(f, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError:
-            fail("the ledger is busy, try again after its current operation finishes", error_code="ledger_busy")
+            fail("the ledger is busy, read the bag before doing anything else", error_code="ledger_busy",
+                 recovery={"action": "read", "actor": "caller", "bag": bag().label})
         os.fchmod(f.fileno(), 0o600)
         _held = f
         try:
@@ -323,12 +344,14 @@ class Snapshot:
             fail("this shell matches multiple registered names, send from one session")
         if matches:
             return matches[0]
+        rejoin = {"action": "join", "actor": "caller", "bag": bag().label,
+                  "vendor": next(iter(keys)) if len(keys) == 1 else None, "name": None}
         for key in keys.values():
             mine = self.joins(key)
             if mine:
-                fail(f"your name @{mine[-1]['peer']} {self.lost(mine[-1])}")
+                fail(f"your name @{mine[-1]['peer']} {self.lost(mine[-1])}", recovery=rejoin)
         fail("this session has not joined, run " + " or ".join(
-            bag().command(f"join {source}") for source in keys))
+            bag().command(f"join {source}") for source in keys), recovery=rejoin)
 
     def lost(self, mine):
         """Where this door's last name went: taken by a door that holds it, or released since."""
@@ -348,7 +371,8 @@ class Snapshot:
         successor = next((n for n, r in self.peers.items()
                           if old is not None and identity(r) == identity(old)), None)
         hint = f", its last door now holds @{successor}" if successor else ""
-        fail(f"@{peer} is not registered{hint}, run {bag().command('read')}")
+        fail(f"@{peer} is not registered{hint}, run {bag().command('read')}",
+             recovery={"action": "read", "actor": "caller", "bag": bag().label})
 
 
 def where(rec):
@@ -417,8 +441,9 @@ def knock_codex(door, text):
     codex = codex_path()
     if not shutil.which(codex):
         fail(f"no codex at {codex}, set POSTBAG_CODEX", error_code="transport_unavailable")
+    env = {k: v for k, v in os.environ.items() if k not in HIDDEN_FROM_CHILD}
     try:
-        run = subprocess.run([codex, "queue", "--thread", door["thread"], "--message", text],
+        run = subprocess.run([codex, "queue", "--thread", door["thread"], "--message", text], env=env,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
     except subprocess.TimeoutExpired as e:
         raise TransportError("codex queue did not return in 30 s", error_code="submission_unknown",
@@ -449,7 +474,12 @@ def envelope(rec, state):
     text = f"{heading}\n{status}\n\n{rec['body']}"
     if left:
         command = bag().command(f"send @{rec['from']} -")
-        text += (f"\n\nIf it needs an answer, reply with:\n{command} <<'POSTBAG'\n"
+        if bag().named or bag().label == "default":  # the MCP interface refuses path selectors
+            text += (f"\n\nIf it needs an answer and you have Postbag MCP tools, call postbag_send "
+                     f"with bag {bag().label} and to @{rec['from']}.\nOtherwise reply with:\n")
+        else:
+            text += "\n\nIf it needs an answer, reply with:\n"
+        text += (f"{command} <<'POSTBAG'\n"
                  "<your reply>\nPOSTBAG\n"
                  "Change POSTBAG at both ends to a word that does not occur in your reply.\n"
                  "Do not reply only to acknowledge.")
@@ -494,6 +524,8 @@ def send(to, body, *, wait=True):
         fail("a letter cannot contain a NUL byte", error_code="invalid_input")
     if not body.strip():
         fail("a letter needs text", error_code="invalid_input")
+    if not encodable(body):  # surrogateescape stdin under a C locale: no door or ledger can carry it
+        fail("a letter must be valid Unicode text", error_code="invalid_input")
     submitted = None  # the letter, once its door took it: from then on a failure must not invite a resend
     try:
         with ledger(wait=wait) as write:
@@ -502,10 +534,11 @@ def send(to, body, *, wait=True):
             if sender == to:
                 fail(f"@{to} is your own name")
             left = state.left
+            reopen = {"action": "open", "actor": "human", "bag": bag().label}
             if left is None:
-                fail("no exchange is open")
+                fail("no exchange is open", recovery=reopen)
             if left <= 0:
-                fail("the exchange's letters are spent")
+                fail("the exchange's letters are spent", recovery=reopen)
             target = state.target(to)
             rec = record("letter", **{"from": sender, "to": to, "body": body})
             label = f"letter {state.sent + 1} of {state.limit} in exchange {state.exchange}"
@@ -521,14 +554,18 @@ def send(to, body, *, wait=True):
                         fail(str(e), error_code=e.error_code, submission_state=e.submission_state)
                 command = bag().command(f"join {vendor(target)}" + (f" {to}" if to != vendor(target) else ""))
                 fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}",
-                     error_code="transport_unavailable")
+                     error_code="transport_unavailable",
+                     recovery={"action": "join", "actor": "recipient", "bag": bag().label,
+                               "vendor": vendor(target), "name": to})
             submitted = label
             write(rec)
     except OSError as e:
         if submitted is None:
             raise
-        fail(f"{submitted} was submitted to @{to}'s door but not recorded ({e}), "
-             f"do not resend before checking @{to}'s session",
+        # The write, its flush or its fsync failed: the record may be absent, partial, or in the
+        # file without confirmed durability. Only the bag itself can say which.
+        fail(f"{submitted} was submitted to @{to}'s door but its recording could not be confirmed ({e}), "
+             f"do not resend before inspecting the bag and @{to}'s session",
              error_code="recording_failed", submission_state="submitted")
     print(f"{label} delivered to @{to} in bag {bag().label}, {left - 1} left")
     return {"bag": bag().label, "from": sender, "to": to, "record": rec["n"],
