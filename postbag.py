@@ -29,7 +29,7 @@ __version__ = "1.2.1"
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
 SESSION_ID = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
-SESSION = {  # door field -> the variable each vendor exports inside its own session
+SESSION = {  # door field -> session variable; current_door prefers Codex's concrete thread ID
     "claude": {"socket": "CLAUDE_CODE_MESSAGING_SOCKET", "token": "CLAUDE_CODE_MESSAGING_TOKEN"},
     "codex": {"thread": "CODEX_SESSION_ID"},
 }
@@ -312,7 +312,7 @@ class Snapshot:
         return renamed, taken
 
     def sender(self):
-        keys = {source: (source, *(os.environ[var] for var in SESSION[source].values()))
+        keys = {source: (source, *current_door(source).values())
                 for source in sorted(inside())}
         if not keys:
             fail("send is a peer's verb, run it inside a claude or codex session")
@@ -368,7 +368,22 @@ def notes(renamed, taken, place):
 
 def inside():
     """The peers whose sessions this shell runs in: empty for a human's terminal."""
-    return {p for p, env in SESSION.items() if all(os.environ.get(v) for v in env.values())}
+    peers = {p for p, env in SESSION.items() if all(os.environ.get(v) for v in env.values())}
+    if "CODEX_THREAD_ID" in os.environ:
+        peers.add("codex")  # an invalid concrete ID must not authorize human-only open
+    return peers
+
+
+def current_door(source):
+    """Read one session's door, using Codex's concrete thread rather than its shared root ID."""
+    fields = {field: os.environ.get(variable) for field, variable in SESSION[source].items()}
+    if source == "codex" and "CODEX_THREAD_ID" in os.environ:
+        thread = os.environ["CODEX_THREAD_ID"]
+        if not SESSION_ID.fullmatch(thread):
+            fail("CODEX_THREAD_ID must be a UUID, check this Codex session's environment",
+                 error_code="invalid_input")
+        fields["thread"] = thread.lower()
+    return fields
 
 
 def door(peer):
@@ -445,10 +460,10 @@ def join(source, peer=None, *, wait=True):
         fail(f"join {source} from inside a {source} session")
     if peer in PEERS and peer != source:
         fail(f"@{peer} is reserved for {peer} doors")
+    fields = current_door(source)
     with ledger(wait=wait) as write:
         state = Snapshot(records())
-        rec = record("join", peer=peer, vendor=source,
-                     **{field: os.environ[var] for field, var in SESSION[source].items()})
+        rec = record("join", peer=peer, vendor=source, **fields)
         conversation = session_id(os.environ.get("CLAUDE_CODE_SESSION_ID")) if source == "claude" else None
         if conversation:
             rec["session_id"] = conversation

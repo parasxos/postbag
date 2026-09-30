@@ -11,6 +11,7 @@ from test_postbag import bag, expected_bag_command, expected_bag_label
 def session(bag, monkeypatch):
     """Select a wholly fake vendor session, clearing both inherited identities."""
     def select(vendor=None, identity="one", **changes):
+        monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
         for fields in bag.SESSION.values():
             for variable in fields.values():
                 monkeypatch.delenv(variable, raising=False)
@@ -71,6 +72,56 @@ def test_same_vendor_pair_routes_both_ways_by_name(bag, session, vendor):
     for (_, door, _), expected in zip(bag.KNOCKED, [bob, ada]):
         assert door["vendor"] == vendor
         assert all(door[field] == value for field, value in expected.items())
+
+
+def test_codex_siblings_share_a_root_but_keep_distinct_concrete_doors(bag, session, monkeypatch):
+    root = "11111111-1111-4111-8111-111111111111"
+    threads = {"ada": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+               "bob": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}
+
+    def select(peer):
+        session("codex")
+        monkeypatch.setenv("CODEX_SESSION_ID", root)
+        monkeypatch.setenv("CODEX_THREAD_ID", threads[peer])
+
+    for peer in threads:
+        select(peer)
+        bag.join("codex", peer)
+    exchange(bag, session)
+    for sender, recipient in [("ada", "bob"), ("bob", "ada")]:
+        select(sender)
+        bag.send(recipient, "a letter between concrete threads")
+        assert bag.records()[-1]["from"] == sender
+        assert bag.KNOCKED[-1][1]["thread"] == threads[recipient]
+    assert {peer: bag.door(peer)["thread"] for peer in threads} == threads
+
+
+def test_codex_concrete_thread_does_not_require_legacy_session_variable(bag, session, monkeypatch):
+    session()
+    thread = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    monkeypatch.setenv("CODEX_THREAD_ID", thread.upper())
+    bag.join("codex", "ada")
+    assert bag.door("ada")["thread"] == thread
+    assert bag.Snapshot(bag.records()).sender() == "ada"
+
+
+@pytest.mark.parametrize("thread", ["", "not-a-uuid", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n"])
+def test_invalid_concrete_codex_thread_never_falls_back_to_root(bag, session, monkeypatch, thread):
+    register(bag, session, "codex", "root", "ada")
+    register(bag, session, "codex", "other", "bob")
+    exchange(bag, session)
+    session("codex", "root")
+    monkeypatch.setenv("CODEX_THREAD_ID", thread)
+    for operation in (lambda: bag.join("codex", "ada"),
+                      lambda: bag.send("bob", "do not impersonate the root")):
+        before = bag.records()
+        with pytest.raises(bag.Refusal, match="CODEX_THREAD_ID must be a UUID") as error:
+            operation()
+        assert error.value.error_code == "invalid_input"
+        assert error.value.submission_state == "not_submitted"
+        assert bag.records() == before
+        assert bag.KNOCKED == []
+    refused_without_effect(bag, lambda: bag.open_exchange(5))
 
 
 def test_rename_releases_old_name_and_points_recipient_to_new_name(bag, session, capsys):

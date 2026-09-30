@@ -12,6 +12,7 @@ import postbag
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("POSTBAG_LEDGER", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     for fields in postbag.SESSION.values():
         for variable in fields.values():
             monkeypatch.delenv(variable, raising=False)
