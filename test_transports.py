@@ -1,4 +1,5 @@
 """Failure contracts that should not require waiting for a real 30-second timeout."""
+import errno
 import json
 import os
 from pathlib import Path
@@ -21,8 +22,108 @@ def test_codex_timeout_is_an_actionable_transport_error(monkeypatch):
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
 
     monkeypatch.setattr(postbag.subprocess, "run", timeout)
-    with pytest.raises(OSError, match="did not return in 30 s"):
+    with pytest.raises(postbag.TransportError, match="did not return in 30 s") as error:
         postbag.knock_codex({"thread": "fake-thread"}, "hello")
+    assert error.value.error_code == "submission_unknown"
+    assert error.value.submission_state == "unknown"
+
+
+def test_codex_nul_byte_is_an_actionable_transport_error(monkeypatch):
+    monkeypatch.setenv("POSTBAG_CODEX", sys.executable)
+    with pytest.raises(postbag.TransportError, match="could not start.*embedded null byte") as error:
+        postbag.knock_codex({"thread": "fake-thread"}, "hello\0world")
+    assert error.value.error_code == "invalid_input"
+    assert error.value.submission_state == "not_submitted"
+
+
+def test_codex_argument_size_failure_does_not_suggest_rejoining(joined, monkeypatch):
+    monkeypatch.setenv("POSTBAG_CODEX", sys.executable)
+    monkeypatch.setitem(joined.KNOCK, "codex", postbag.knock_codex)
+
+    def too_large(argv, **kwargs):
+        raise OSError(errno.E2BIG, "Argument list too long")
+
+    monkeypatch.setattr(postbag.subprocess, "run", too_large)
+    before = joined.ledger_path().read_bytes()
+    with pytest.raises(postbag.Refusal, match="too large.*shorten") as error:
+        joined.send("codex", "a valid body whose envelope exceeds the process limit")
+    assert error.value.error_code == "invalid_input"
+    assert error.value.submission_state == "not_submitted"
+    assert "join codex" not in str(error.value)
+    assert joined.ledger_path().read_bytes() == before
+
+
+def test_codex_timeout_after_submission_warns_without_retry_or_append(joined, monkeypatch):
+    monkeypatch.setenv("POSTBAG_CODEX", sys.executable)
+    monkeypatch.setitem(joined.KNOCK, "codex", postbag.knock_codex)
+    submissions = []
+
+    def submitted_then_timed_out(argv, **kwargs):
+        submissions.append(argv[-1])
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(postbag.subprocess, "run", submitted_then_timed_out)
+    before = joined.ledger_path().read_bytes()
+    with pytest.raises(postbag.Refusal, match="may already have reached.*do not resend") as error:
+        joined.send("codex", "one attempted submission")
+    assert error.value.error_code == "submission_unknown"
+    assert error.value.submission_state == "unknown"
+    assert len(submissions) == 1 and "one attempted submission" in submissions[0]
+    assert joined.ledger_path().read_bytes() == before
+    assert joined.budget() == 3
+
+
+@pytest.mark.parametrize("failure_at", ["connect", "write"])
+def test_claude_connection_and_partial_write_failures_have_distinct_outcomes(
+    joined, be, monkeypatch, failure_at,
+):
+    be("codex")
+    monkeypatch.setitem(joined.KNOCK, "claude", postbag.knock_claude)
+    writes = []
+
+    class Socket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def settimeout(self, timeout):
+            assert timeout == 30
+
+        def connect(self, path):
+            if failure_at == "connect":
+                raise ConnectionRefusedError("closed test socket")
+
+        def sendall(self, payload):
+            writes.append(payload[:32])
+            raise BrokenPipeError("partial test write")
+
+    monkeypatch.setattr(postbag.socket, "socket", lambda *args: Socket())
+    before = joined.ledger_path().read_bytes()
+    with pytest.raises(postbag.Refusal) as error:
+        joined.send("claude", "one attempted socket submission")
+    if failure_at == "write":
+        assert error.value.error_code == "submission_unknown"
+        assert error.value.submission_state == "unknown"
+        assert "may already have reached" in str(error.value)
+        assert "do not resend" in str(error.value)
+        assert len(writes) == 1
+    else:
+        assert error.value.error_code == "transport_unavailable"
+        assert error.value.submission_state == "not_submitted"
+        assert "door did not answer" in str(error.value)
+        assert not writes
+    assert joined.ledger_path().read_bytes() == before
+    assert joined.budget() == 3
+
+
+def test_send_returns_submission_metadata_without_body_or_credentials(joined):
+    result = joined.send("codex", "one recorded submission")
+    assert result == {
+        "bag": str(joined.ledger_path()), "from": "claude", "to": "codex", "record": 4,
+        "exchange": 1, "letter": 1, "remaining": 2, "submission_state": "submitted",
+    }
 
 
 def test_missing_codex_binary_refuses_before_queueing(monkeypatch):
@@ -49,6 +150,8 @@ def test_failed_append_reports_that_submission_already_happened(joined, monkeypa
     assert "not recorded" in message
     assert "do not resend" in message
     assert "stop and ask the human" in message
+    assert error.value.error_code == "recording_failed"
+    assert error.value.submission_state == "submitted"
     assert len(joined.KNOCKED) == 1
     assert not any(rec["kind"] == "letter" for rec in joined.records())
 

@@ -215,6 +215,31 @@ def test_invalid_utf8_ledger_is_a_clean_refusal(cli):
     assert cli.ledger.read_bytes() == original
 
 
+@pytest.mark.parametrize("separator", ["\0", "\x1b", "\x7f"])
+def test_legacy_control_timestamp_reads_canonically_without_changing_history(cli, separator):
+    cli.ledger.parent.mkdir()
+    original = json.dumps({"n": 1, "at": f"2026-09-08{separator}10:00:00+02:00",
+                           "kind": "open", "limit": 1}) + "\n"
+    cli.ledger.write_text(original, encoding="utf-8")
+    result = cli("read")
+    assert_ok(result)
+    assert "2026-09-08T10:00:00+02:00" in result.stdout
+    assert separator not in result.stdout + result.stderr
+    assert cli.ledger.read_text(encoding="utf-8") == original
+
+
+def test_legacy_control_timestamp_in_takeover_is_canonical(cli):
+    assert_ok(cli("join", "codex", peer="codex"))
+    record = rows(cli.ledger)[0]
+    record["at"] = "2026-09-08\x1b10:00:00+02:00"
+    cli.ledger.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    result = cli("join", "codex", peer="codex", extra={"CODEX_SESSION_ID": "fake-replacement"})
+    assert_ok(result)
+    assert "taken from the codex door that joined at 2026-09-08T10:00:00+02:00" in result.stdout
+    assert "\x1b" not in result.stdout + result.stderr
+    assert rows(cli.ledger)[0] == record
+
+
 @pytest.mark.parametrize("preexisting", [False, True])
 def test_join_keeps_ledger_private_even_with_permissive_umask(cli, preexisting):
     if preexisting:
@@ -320,6 +345,33 @@ def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex, same_vendor
     assert f"\n\n{body}\n\nIf it needs an answer, reply with:\n" in content
     assert f"postbag --bag '{cli.ledger}' send @{sender_name} - <<'POSTBAG'" in content
     assert rows(cli.ledger)[-1]["body"] == body
+
+
+@pytest.mark.parametrize("sender, recipient", [("claude", "codex"), ("codex", "claude")])
+def test_nul_stdin_refuses_before_contacting_either_vendor(cli, fake_codex, sender, recipient):
+    prepare_exchange(cli, 1)
+    before = cli.ledger.read_bytes()
+    result = cli("send", recipient, "-", peer=sender, extra=fake_codex, input="hello\0world")
+    assert result.returncode == 1
+    assert "NUL byte" in result.stderr
+    assert "stop and ask the human" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert cli.ledger.read_bytes() == before
+    assert not Path(fake_codex["POSTBAG_TEST_CAPTURE"]).exists()
+
+
+def test_oversized_codex_stdin_is_a_clean_input_refusal(cli, fake_codex):
+    sender, recipient, extra = prepare_exchange(cli, 1)
+    before = cli.ledger.read_bytes()
+    # This exceeds macOS ARG_MAX and Linux's per-argument limit.
+    result = cli("send", recipient, "-", peer=sender, extra={**fake_codex, **extra}, input="x" * (1 << 20))
+    assert result.returncode == 1
+    assert "too large for codex queue, shorten it" in result.stderr
+    assert "stop and ask the human" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "join codex" not in result.stderr
+    assert cli.ledger.read_bytes() == before
+    assert not Path(fake_codex["POSTBAG_TEST_CAPTURE"]).exists()
 
 
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])

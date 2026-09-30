@@ -8,6 +8,7 @@
     postbag bags                  # local bags, their budgets and registered peers
 """
 import argparse
+import errno
 import fcntl
 import json
 import os
@@ -92,9 +93,28 @@ def codex_path():
     return shutil.which("codex") or "codex"
 
 
-def fail(why, *, context=True):
+class Refusal(SystemExit):
+    """A CLI refusal with submission metadata for programmatic callers."""
+
+    def __init__(self, message, *, error_code="refused", submission_state="not_submitted"):
+        super().__init__(message)
+        self.error_code = error_code
+        self.submission_state = submission_state
+
+
+class TransportError(OSError):
+    """A door failure that distinguishes rejection from uncertain submission."""
+
+    def __init__(self, message, *, error_code="transport_unavailable", submission_state="not_submitted"):
+        super().__init__(message)
+        self.error_code = error_code
+        self.submission_state = submission_state
+
+
+def fail(why, *, context=True, error_code="refused", submission_state="not_submitted"):
     prefix = f"in bag {bag().label}: " if context else ""
-    sys.exit(f"postbag: {prefix}{why}; stop and ask the human")
+    raise Refusal(f"postbag: {prefix}{why}; stop and ask the human",
+                  error_code=error_code, submission_state=submission_state)
 
 
 def valid_name(value):
@@ -328,7 +348,13 @@ class Snapshot:
 
 def where(rec):
     """A door named for a human, by its vendor and the moment it joined, never by its fields."""
-    return f"{vendor(rec)} door that joined at {rec['at']}"
+    return f"{vendor(rec)} door that joined at {display_stamp(rec['at'])}"
+
+
+def display_stamp(value):
+    # fromisoformat also accepts control characters as the date/time separator.
+    # Preserve readable legacy records while printing only a canonical timestamp.
+    return datetime.fromisoformat(value).isoformat()
 
 
 def notes(renamed, taken, place):
@@ -350,21 +376,38 @@ def door(peer):
 def knock_claude(door, text):
     lines = [{"type": "auth", "token": door["token"]},
              {"type": "user", "message": {"role": "user", "content": text}}]
+    payload = "".join(json.dumps(line) + "\n" for line in lines).encode()
     with socket.socket(socket.AF_UNIX) as s:
         s.settimeout(30)
         s.connect(door["socket"])
-        s.sendall("".join(json.dumps(line) + "\n" for line in lines).encode())
+        try:
+            s.sendall(payload)
+        except OSError as e:
+            # sendall does not report how much the recipient received.
+            raise TransportError(f"Claude socket write failed ({e})", error_code="submission_unknown",
+                                 submission_state="unknown") from e
 
 
 def knock_codex(door, text):
+    if "\0" in text:
+        raise TransportError("codex queue could not start (embedded null byte in message)",
+                             error_code="invalid_input")
     codex = codex_path()
     if not shutil.which(codex):
-        fail(f"no codex at {codex}, set POSTBAG_CODEX")
+        fail(f"no codex at {codex}, set POSTBAG_CODEX", error_code="transport_unavailable")
     try:
         run = subprocess.run([codex, "queue", "--thread", door["thread"], "--message", text],
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-    except subprocess.TimeoutExpired:
-        raise OSError("codex queue did not return in 30 s")
+    except subprocess.TimeoutExpired as e:
+        raise TransportError("codex queue did not return in 30 s", error_code="submission_unknown",
+                             submission_state="unknown") from e
+    except ValueError as e:
+        raise TransportError(f"codex queue could not start ({e})", error_code="invalid_input") from e
+    except OSError as e:
+        if e.errno == errno.E2BIG:
+            raise TransportError("the letter is too large for codex queue, shorten it",
+                                 error_code="invalid_input") from e
+        raise
     if run.returncode:  # its output is never read: it can echo the thread, a door field, or bytes that do not decode
         raise OSError(f"codex queue exited {run.returncode}")
 
@@ -419,9 +462,12 @@ def open_exchange(limit):
 
 
 def send(to, body):
+    """Submit once; return receipt metadata without asserting recipient acceptance."""
     to = name(to, mention=True)
+    if "\0" in body:
+        fail("a letter cannot contain a NUL byte", error_code="invalid_input")
     if not body.strip():
-        fail("a letter needs text")
+        fail("a letter needs text", error_code="invalid_input")
     submitted = None  # the letter, once its door took it: from then on a failure must not invite a resend
     try:
         with ledger() as write:
@@ -440,16 +486,28 @@ def send(to, body):
             try:
                 KNOCK[vendor(target)](target, envelope(rec, state))
             except OSError as e:
+                if isinstance(e, TransportError):
+                    if e.submission_state == "unknown":
+                        fail(f"{label} may already have reached @{to}'s door ({e}), it was not recorded, "
+                             f"do not resend before checking @{to}'s session",
+                             error_code=e.error_code, submission_state=e.submission_state)
+                    if e.error_code == "invalid_input":
+                        fail(str(e), error_code=e.error_code, submission_state=e.submission_state)
                 command = bag().command(f"join {vendor(target)}" + (f" {to}" if to != vendor(target) else ""))
-                fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}")
+                fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}",
+                     error_code="transport_unavailable")
             submitted = label
             write(rec)
     except OSError as e:
         if submitted is None:
             raise
         fail(f"{submitted} was submitted to @{to}'s door but not recorded ({e}), "
-             f"do not resend before checking @{to}'s session")
+             f"do not resend before checking @{to}'s session",
+             error_code="recording_failed", submission_state="submitted")
     print(f"{label} delivered to @{to} in bag {bag().label}, {left - 1} left")
+    return {"bag": bag().label, "from": sender, "to": to, "record": rec["n"],
+            "exchange": state.exchange, "letter": state.sent + 1, "remaining": left - 1,
+            "submission_state": "submitted"}
 
 
 def read(count):
@@ -467,7 +525,7 @@ def read(count):
         kind = rec["kind"]
         if kind == "letter":  # a letter's place in its exchange stands where the other kinds print their name
             kind = f"{number}/{limit}" if limit is not None else "unassigned"
-        line = f"{rec['n']:>4}  {rec['at']}  {kind:<6}"
+        line = f"{rec['n']:>4}  {display_stamp(rec['at'])}  {kind:<6}"
         if rec["kind"] == "letter":
             print(f"{line} @{rec['from']} -> @{rec['to']}")
             print("\n".join("      " + l for l in rec["body"].splitlines()))
