@@ -6,13 +6,16 @@ exchanges, replenish budgets, poll recipients, or retry letters.
 
 ## Install and connect
 
-The MCP interface is unreleased. From this checkout:
+Install both the CLI and MCP tools in one environment:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install '.[mcp]'
-.venv/bin/postbag-mcp --version
+pipx install 'postbag[mcp]'
+postbag --version
+postbag-mcp --version
 ```
+
+Alternatively, create a virtual environment and run
+`python -m pip install 'postbag[mcp]'` inside it.
 
 The extra installs MCP Python SDK 2.2 or later within major version 2.
 Installing Postbag without the extra keeps the CLI free of runtime
@@ -22,14 +25,14 @@ Use the absolute executable path in each host's configuration. For Codex:
 
 ```toml
 [mcp_servers.postbag]
-command = "/absolute/path/to/.venv/bin/postbag-mcp"
+command = "/absolute/path/to/postbag-mcp"
 tool_timeout_sec = 60
 ```
 
 For Claude Code:
 
 ```sh
-claude mcp add --transport stdio postbag -- /absolute/path/to/.venv/bin/postbag-mcp
+claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/postbag-mcp
 ```
 
 Restart or reconnect the MCP server after changing its configuration or
@@ -47,7 +50,7 @@ permissions and inbound policy.
 The human opens a named bag from a terminal outside agent sessions:
 
 ```sh
-/absolute/path/to/.venv/bin/postbag --bag review open --limit 6
+/absolute/path/to/postbag --bag review open --limit 6
 ```
 
 Ask each agent to call `postbag_join` with `bag="review"` and a distinct

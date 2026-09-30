@@ -4,10 +4,12 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [1.3.0] - 2026-09-30
 
-Development builds report `1.3.0.dev0` to distinguish them from the
-published `1.2.1`. No release tag or package publication is implied.
+MCP tools remove shell-command friction while retaining the existing bag,
+native transports, and human-controlled letter budget. Upgrade both peers
+to the same version, reconnect their MCP servers, and rejoin under the
+same names. Existing ledgers and remaining budgets need no migration.
 
 ### Added
 - Optional `postbag[mcp]` extra and `postbag-mcp` stdio entry point with four
