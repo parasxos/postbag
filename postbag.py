@@ -135,11 +135,13 @@ def vendor(rec):
 
 def identity(rec):
     kind = vendor(rec)
+    if kind == "codex":
+        return kind, session_id(rec["thread"]) or rec["thread"]
     return (kind, *(rec[field] for field in SESSION[kind]))
 
 
 def session_id(value):
-    """Optional navigation metadata, never a door or a shell fragment."""
+    """Normalize a UUID without accepting arbitrary session text."""
     return value.lower() if isinstance(value, str) and SESSION_ID.fullmatch(value) else None
 
 
@@ -383,6 +385,8 @@ def current_door(source):
             fail("CODEX_THREAD_ID must be a UUID, check this Codex session's environment",
                  error_code="invalid_input")
         fields["thread"] = thread.lower()
+    elif source == "codex":
+        fields["thread"] = session_id(fields["thread"]) or fields["thread"]
     return fields
 
 
@@ -470,6 +474,9 @@ def join(source, peer=None, *, wait=True):
         renamed, taken = state.register(rec)
         write(rec)
     print(", ".join([f"@{peer} ({source}) joined in bag {bag().label}", *notes(renamed, taken, where)]))
+    return {"bag": bag().label, "name": peer, "vendor": source,
+            "renamed": renamed[0] if renamed else None,
+            "took": {"vendor": vendor(taken), "at": display_stamp(taken["at"])} if taken else None}
 
 
 def open_exchange(limit):
