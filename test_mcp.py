@@ -3,15 +3,18 @@
 import asyncio
 from contextlib import asynccontextmanager
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
+import select
 import socket
 import stat
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -24,6 +27,7 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parent
+SERVER_SCRIPT = Path(importlib.util.find_spec("postbag_mcp").origin)
 THREAD_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 THREAD_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 STARTUP_THREAD = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
@@ -81,16 +85,17 @@ def wire(tmp_path):
         "POSTBAG_TEST_CAPTURE": str(capture),
         # A shared host may launch the server from some unrelated session.
         "CODEX_SESSION_ID": STARTUP_THREAD,
+        "CODEX_THREAD_ID": STARTUP_THREAD,
     }
     logs = []
 
     @asynccontextmanager
-    async def session(*, extra=None, mode="auto"):
+    async def session(*, extra=None, mode="auto", pinned=False):
         log = tmp_path / f"server-{len(logs)}.stderr"
         logs.append(log)
         server = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "postbag_mcp"],
+            args=[str(SERVER_SCRIPT)] if pinned else ["-m", "postbag_mcp"],
             env={**environment, **(extra or {})},
             cwd=tmp_path,
         )
@@ -150,6 +155,7 @@ def test_sdk_stdio_catalog_and_readonly_empty_inventory(wire, mode):
             assert set(tools["postbag_read"].input_schema["properties"]) == {"bag", "limit", "before"}
             assert set(tools["postbag_bags"].input_schema["properties"]) == {"limit", "offset"}
             assert all(tool.output_schema for tool in tools.values())
+            assert tools["postbag_join"].annotations.destructive_hint is True
             assert tools["postbag_read"].annotations.read_only_hint is True
             assert tools["postbag_bags"].annotations.read_only_hint is True
             result = checked(await client.call_tool("postbag_bags", {}))["data"]
@@ -169,7 +175,7 @@ def test_request_metadata_selects_each_sender_and_ignores_startup_identity(wire)
     async def exercise():
         async with wire.session() as client:
             missing = checked(await client.call_tool("postbag_join", {"name": "ada"}), ok=False)
-            assert missing["submission_state"] != "submitted"
+            assert missing["submission_state"] is None
             for name, thread in (("ada", THREAD_A), ("bob", THREAD_B)):
                 result = await client.call_tool("postbag_join", {"name": name}, meta=meta(thread))
                 checked(result)
@@ -375,6 +381,80 @@ def test_cancelled_call_finishes_recording_inflight_submission(wire):
     assert [row["body"] for row in wire.rows() if row["kind"] == "letter"] == ["cancel after submission"]
 
 
+@pytest.mark.parametrize("delay", [1.0, 2.5])
+def test_stdio_eof_waits_for_submitted_letter_to_be_recorded(wire, tmp_path, delay):
+    """Test the server's graceful shutdown without an SDK client's kill timer."""
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+    log = tmp_path / "raw-eof.stderr"
+    with log.open("w", encoding="utf-8") as errors:
+        process = subprocess.Popen(
+            [sys.executable, str(SERVER_SCRIPT)],
+            cwd=tmp_path, env={**wire.environment, "POSTBAG_TEST_SLEEP": str(delay)},
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors,
+            text=True, start_new_session=True,
+        )
+        try:
+            initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-11-25", "capabilities": {},
+                "clientInfo": {"name": "postbag-private-wire-test", "version": "1"}}}
+            process.stdin.write(json.dumps(initialize) + "\n")
+            process.stdin.flush()
+            assert select.select([process.stdout], [], [], 10)[0], "initialize did not return"
+            response = json.loads(process.stdout.readline())
+            assert response["id"] == 1 and "result" in response
+            process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+            call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                "name": "postbag_send", "arguments": {"to": "bob", "body": "EOF after submission"},
+                "_meta": meta()}}
+            process.stdin.write(json.dumps(call) + "\n")
+            process.stdin.flush()
+            deadline = time.monotonic() + 10
+            while not wire.calls():
+                assert time.monotonic() < deadline, "fake native side effect did not occur"
+                assert process.poll() is None, log.read_text()
+                time.sleep(0.01)
+            process.stdin.close()
+            process.stdin = None
+            remainder, _ = process.communicate(timeout=10)
+            assert process.returncode == 0, log.read_text()
+            # A response may already have been written before shutdown. Any output
+            # still has to be protocol JSON, never CLI prose or vendor output.
+            for line in remainder.splitlines():
+                assert json.loads(line)["jsonrpc"] == "2.0"
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=10)
+    assert len(wire.calls()) == 1
+    assert [row["body"] for row in wire.rows() if row["kind"] == "letter"] == ["EOF after submission"]
+    assert "private native output" not in log.read_text()
+    assert FAKE_TOKEN not in log.read_text()
+
+
+def test_worker_never_imports_modules_from_the_host_project(wire, tmp_path):
+    marker = tmp_path / "host-code-executed"
+    for filename in ("postbag.py", "postbag_mcp.py"):
+        (tmp_path / filename).write_text(
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text({filename!r})\n"
+            "raise SystemExit(91)\n",
+            encoding="utf-8",
+        )
+    results = []
+
+    async def exercise():
+        # Pin the server entry point so this checks worker resolution rather than
+        # intentionally asking `python -m` to run the fixture's hostile server.
+        async with wire.session(pinned=True) as client:
+            results.append(await client.call_tool("postbag_join", {"name": "ada"}, meta=meta()))
+            results.append(await client.call_tool("postbag_read", {}))
+    asyncio.run(exercise())
+    assert not marker.exists(), "worker imported the host project's Python module"
+    for result in results:
+        checked(result)
+    assert wire.rows()[0]["thread"] == THREAD_A
+
+
 def test_concurrent_last_slot_has_one_submission_and_no_retry(wire):
     wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
 
@@ -422,7 +502,11 @@ def test_restart_preserves_registration_and_rejoin_displaces_old_identity(wire):
             checked(await client.call_tool("postbag_join", {"name": "ada"}, meta=meta()))
         async with wire.session() as client:
             checked(await client.call_tool("postbag_send", {"to": "bob", "body": "after restart"}, meta=meta()))
-            checked(await client.call_tool("postbag_join", {"name": "ada"}, meta=meta(STARTUP_THREAD)))
+            takeover = checked(await client.call_tool("postbag_join", {"name": "ada"}, meta=meta(STARTUP_THREAD)))
+            assert takeover["submission_state"] is None
+            assert takeover["data"]["took"]["vendor"] == "codex"
+            assert takeover["data"]["renamed"] is None
+            assert THREAD_A not in json.dumps(takeover)
             checked(await client.call_tool("postbag_send", {"to": "bob", "body": "old sender"}, meta=meta()), ok=False)
             checked(await client.call_tool("postbag_send", {"to": "bob", "body": "new sender"}, meta=meta(STARTUP_THREAD)))
     asyncio.run(exercise())
@@ -464,6 +548,7 @@ def test_locked_reads_refuse_and_inventory_preserves_other_bags(wire):
                 fcntl.flock(locked, fcntl.LOCK_EX)
                 reading = checked(await client.call_tool("postbag_read", {"bag": "busy"}), ok=False)
                 assert reading["error_code"] == "ledger_busy"
+                assert reading["submission_state"] is None
                 inventory = checked(await client.call_tool("postbag_bags", {}), ok=False)["data"]
                 assert inventory["total"] == 2
                 rows = {row["bag"]: row for row in inventory["bags"]}
