@@ -8,6 +8,7 @@
     postbag bags                  # local bags, their budgets and registered peers
 """
 import argparse
+import errno
 import fcntl
 import json
 import os
@@ -23,12 +24,12 @@ from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
 SESSION_ID = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
-SESSION = {  # door field -> the variable each vendor exports inside its own session
+SESSION = {  # door field -> session variable; current_door prefers Codex's concrete thread ID
     "claude": {"socket": "CLAUDE_CODE_MESSAGING_SOCKET", "token": "CLAUDE_CODE_MESSAGING_TOKEN"},
     "codex": {"thread": "CODEX_SESSION_ID"},
 }
@@ -92,9 +93,28 @@ def codex_path():
     return shutil.which("codex") or "codex"
 
 
-def fail(why, *, context=True):
+class Refusal(SystemExit):
+    """A CLI refusal with submission metadata for programmatic callers."""
+
+    def __init__(self, message, *, error_code="refused", submission_state="not_submitted"):
+        super().__init__(message)
+        self.error_code = error_code
+        self.submission_state = submission_state
+
+
+class TransportError(OSError):
+    """A door failure that distinguishes rejection from uncertain submission."""
+
+    def __init__(self, message, *, error_code="transport_unavailable", submission_state="not_submitted"):
+        super().__init__(message)
+        self.error_code = error_code
+        self.submission_state = submission_state
+
+
+def fail(why, *, context=True, error_code="refused", submission_state="not_submitted"):
     prefix = f"in bag {bag().label}: " if context else ""
-    sys.exit(f"postbag: {prefix}{why}; stop and ask the human")
+    raise Refusal(f"postbag: {prefix}{why}; stop and ask the human",
+                  error_code=error_code, submission_state=submission_state)
 
 
 def valid_name(value):
@@ -115,11 +135,13 @@ def vendor(rec):
 
 def identity(rec):
     kind = vendor(rec)
+    if kind == "codex":
+        return kind, session_id(rec["thread"]) or rec["thread"]
     return (kind, *(rec[field] for field in SESSION[kind]))
 
 
 def session_id(value):
-    """Optional navigation metadata, never a door or a shell fragment."""
+    """Normalize a UUID without accepting arbitrary session text."""
     return value.lower() if isinstance(value, str) and SESSION_ID.fullmatch(value) else None
 
 
@@ -205,7 +227,7 @@ def record(kind, **fields):
 
 
 @contextmanager
-def ledger(create=False):
+def ledger(create=False, *, wait=True):
     """The ledger held exclusively and made private; yields the function that appends one record."""
     global _held
     path = ledger_path()
@@ -231,9 +253,12 @@ def ledger(create=False):
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
         fail(f"the ledger is not a regular file ({path})")
-    os.fchmod(fd, 0o600)
     with os.fdopen(fd, "a+", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except BlockingIOError:
+            fail("the ledger is busy, try again after its current operation finishes", error_code="ledger_busy")
+        os.fchmod(f.fileno(), 0o600)
         _held = f
         try:
             yield lambda rec: (f.write(json.dumps(rec) + "\n"), f.flush(), os.fsync(f.fileno()))
@@ -289,7 +314,7 @@ class Snapshot:
         return renamed, taken
 
     def sender(self):
-        keys = {source: (source, *(os.environ[var] for var in SESSION[source].values()))
+        keys = {source: (source, *current_door(source).values())
                 for source in sorted(inside())}
         if not keys:
             fail("send is a peer's verb, run it inside a claude or codex session")
@@ -328,7 +353,13 @@ class Snapshot:
 
 def where(rec):
     """A door named for a human, by its vendor and the moment it joined, never by its fields."""
-    return f"{vendor(rec)} door that joined at {rec['at']}"
+    return f"{vendor(rec)} door that joined at {display_stamp(rec['at'])}"
+
+
+def display_stamp(value):
+    # fromisoformat also accepts control characters as the date/time separator.
+    # Preserve readable legacy records while printing only a canonical timestamp.
+    return datetime.fromisoformat(value).isoformat()
 
 
 def notes(renamed, taken, place):
@@ -339,7 +370,24 @@ def notes(renamed, taken, place):
 
 def inside():
     """The peers whose sessions this shell runs in: empty for a human's terminal."""
-    return {p for p, env in SESSION.items() if all(os.environ.get(v) for v in env.values())}
+    peers = {p for p, env in SESSION.items() if all(os.environ.get(v) for v in env.values())}
+    if "CODEX_THREAD_ID" in os.environ:
+        peers.add("codex")  # an invalid concrete ID must not authorize human-only open
+    return peers
+
+
+def current_door(source):
+    """Read one session's door, using Codex's concrete thread rather than its shared root ID."""
+    fields = {field: os.environ.get(variable) for field, variable in SESSION[source].items()}
+    if source == "codex" and "CODEX_THREAD_ID" in os.environ:
+        thread = os.environ["CODEX_THREAD_ID"]
+        if not SESSION_ID.fullmatch(thread):
+            fail("CODEX_THREAD_ID must be a UUID, check this Codex session's environment",
+                 error_code="invalid_input")
+        fields["thread"] = thread.lower()
+    elif source == "codex":
+        fields["thread"] = session_id(fields["thread"]) or fields["thread"]
+    return fields
 
 
 def door(peer):
@@ -350,23 +398,41 @@ def door(peer):
 def knock_claude(door, text):
     lines = [{"type": "auth", "token": door["token"]},
              {"type": "user", "message": {"role": "user", "content": text}}]
+    payload = "".join(json.dumps(line) + "\n" for line in lines).encode()
     with socket.socket(socket.AF_UNIX) as s:
         s.settimeout(30)
         s.connect(door["socket"])
-        s.sendall("".join(json.dumps(line) + "\n" for line in lines).encode())
+        try:
+            s.sendall(payload)
+        except OSError as e:
+            # sendall does not report how much the recipient received.
+            raise TransportError(f"Claude socket write failed ({e})", error_code="submission_unknown",
+                                 submission_state="unknown") from e
 
 
 def knock_codex(door, text):
+    if "\0" in text:
+        raise TransportError("codex queue could not start (embedded null byte in message)",
+                             error_code="invalid_input")
     codex = codex_path()
     if not shutil.which(codex):
-        fail(f"no codex at {codex}, set POSTBAG_CODEX")
+        fail(f"no codex at {codex}, set POSTBAG_CODEX", error_code="transport_unavailable")
     try:
         run = subprocess.run([codex, "queue", "--thread", door["thread"], "--message", text],
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-    except subprocess.TimeoutExpired:
-        raise OSError("codex queue did not return in 30 s")
+    except subprocess.TimeoutExpired as e:
+        raise TransportError("codex queue did not return in 30 s", error_code="submission_unknown",
+                             submission_state="unknown") from e
+    except ValueError as e:
+        raise TransportError(f"codex queue could not start ({e})", error_code="invalid_input") from e
+    except OSError as e:
+        if e.errno == errno.E2BIG:
+            raise TransportError("the letter is too large for codex queue, shorten it",
+                                 error_code="invalid_input") from e
+        raise
     if run.returncode:  # its output is never read: it can echo the thread, a door field, or bytes that do not decode
-        raise OSError(f"codex queue exited {run.returncode}")
+        raise TransportError(f"codex queue exited {run.returncode}", error_code="submission_unknown",
+                             submission_state="unknown")
 
 
 KNOCK = {"claude": knock_claude, "codex": knock_codex}
@@ -392,22 +458,25 @@ def envelope(rec, state):
 
 # verbs ----------------------------------------------------------------------
 
-def join(source, peer=None):
+def join(source, peer=None, *, wait=True):
     peer = name(source if peer is None else peer)
     if source not in inside():
         fail(f"join {source} from inside a {source} session")
     if peer in PEERS and peer != source:
         fail(f"@{peer} is reserved for {peer} doors")
-    with ledger() as write:
+    fields = current_door(source)
+    with ledger(wait=wait) as write:
         state = Snapshot(records())
-        rec = record("join", peer=peer, vendor=source,
-                     **{field: os.environ[var] for field, var in SESSION[source].items()})
+        rec = record("join", peer=peer, vendor=source, **fields)
         conversation = session_id(os.environ.get("CLAUDE_CODE_SESSION_ID")) if source == "claude" else None
         if conversation:
             rec["session_id"] = conversation
         renamed, taken = state.register(rec)
         write(rec)
     print(", ".join([f"@{peer} ({source}) joined in bag {bag().label}", *notes(renamed, taken, where)]))
+    return {"bag": bag().label, "name": peer, "vendor": source,
+            "renamed": renamed[0] if renamed else None,
+            "took": {"vendor": vendor(taken), "at": display_stamp(taken["at"])} if taken else None}
 
 
 def open_exchange(limit):
@@ -418,13 +487,16 @@ def open_exchange(limit):
     print(f"exchange open: {limit} letters in bag {bag().label}")
 
 
-def send(to, body):
+def send(to, body, *, wait=True):
+    """Submit once; return receipt metadata without asserting recipient acceptance."""
     to = name(to, mention=True)
+    if "\0" in body:
+        fail("a letter cannot contain a NUL byte", error_code="invalid_input")
     if not body.strip():
-        fail("a letter needs text")
+        fail("a letter needs text", error_code="invalid_input")
     submitted = None  # the letter, once its door took it: from then on a failure must not invite a resend
     try:
-        with ledger() as write:
+        with ledger(wait=wait) as write:
             state = Snapshot(records())
             sender = state.sender()
             if sender == to:
@@ -440,16 +512,28 @@ def send(to, body):
             try:
                 KNOCK[vendor(target)](target, envelope(rec, state))
             except OSError as e:
+                if isinstance(e, TransportError):
+                    if e.submission_state == "unknown":
+                        fail(f"{label} may already have reached @{to}'s door ({e}), it was not recorded, "
+                             f"do not resend before checking @{to}'s session",
+                             error_code=e.error_code, submission_state=e.submission_state)
+                    if e.error_code == "invalid_input":
+                        fail(str(e), error_code=e.error_code, submission_state=e.submission_state)
                 command = bag().command(f"join {vendor(target)}" + (f" {to}" if to != vendor(target) else ""))
-                fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}")
+                fail(f"@{to}'s door did not answer ({e}), if its session restarted it must run: {command}",
+                     error_code="transport_unavailable")
             submitted = label
             write(rec)
     except OSError as e:
         if submitted is None:
             raise
         fail(f"{submitted} was submitted to @{to}'s door but not recorded ({e}), "
-             f"do not resend before checking @{to}'s session")
+             f"do not resend before checking @{to}'s session",
+             error_code="recording_failed", submission_state="submitted")
     print(f"{label} delivered to @{to} in bag {bag().label}, {left - 1} left")
+    return {"bag": bag().label, "from": sender, "to": to, "record": rec["n"],
+            "exchange": state.exchange, "letter": state.sent + 1, "remaining": left - 1,
+            "submission_state": "submitted"}
 
 
 def read(count):
@@ -467,7 +551,7 @@ def read(count):
         kind = rec["kind"]
         if kind == "letter":  # a letter's place in its exchange stands where the other kinds print their name
             kind = f"{number}/{limit}" if limit is not None else "unassigned"
-        line = f"{rec['n']:>4}  {rec['at']}  {kind:<6}"
+        line = f"{rec['n']:>4}  {display_stamp(rec['at'])}  {kind:<6}"
         if rec["kind"] == "letter":
             print(f"{line} @{rec['from']} -> @{rec['to']}")
             print("\n".join("      " + l for l in rec["body"].splitlines()))
@@ -606,8 +690,8 @@ def terminal_inventory(rows, counts, resumptions=None):
     line("Scope: ~/.postbag + selected custom path if present. Other paths are not listed.")
 
 
-def bags(resume=False):
-    """Inventory existing local ledgers, without storing state or contacting doors."""
+def inventory():
+    """Return rows, counts, resume metadata and problems without printing or contacting doors."""
     selected = bag()
     default = Bag("default")
     directory = default.path.parent / "bags"
@@ -678,10 +762,9 @@ def bags(resume=False):
                          for rec, *_ in reversed(state.history) if rec["kind"] == "letter"), "-")
             peers = [(peer, vendor(rec)) for peer, rec in sorted(state.peers.items())]
             rows.append((candidate.label, left, last, peers))
-            if resume:
-                resumptions[candidate.label] = [
-                    (peer, session_id(rec.get("session_id")))
-                    for peer, rec in sorted(state.peers.items()) if vendor(rec) == "claude"]
+            resumptions[candidate.label] = [
+                (peer, session_id(rec.get("session_id")))
+                for peer, rec in sorted(state.peers.items()) if vendor(rec) == "claude"]
         except (SystemExit, OSError, UnicodeError, ValueError, RecursionError) as e:
             counts["unavailable"] += 1
             rows.append((candidate.label, "unavailable", "-", None))
@@ -695,6 +778,12 @@ def bags(resume=False):
         finally:
             _selection.reset(token)
 
+    return rows, counts, resumptions, problems
+
+
+def bags(resume=False):
+    """Inventory existing local ledgers, without storing state or contacting doors."""
+    rows, counts, resumptions, problems = inventory()
     if sys.stdout.isatty():
         terminal_inventory(rows, counts, resumptions if resume else None)
     else:
@@ -711,7 +800,7 @@ def bags(resume=False):
             print(" | ".join([*(row[i].ljust(widths[i]) for i in range(3)), row[3]]))
             if resume:
                 print_resumes(resumptions.get(row[0], []))
-        print(f"Scope: default and named bags under {default.path.parent}, "
+        print(f"Scope: default and named bags under {Bag('default').path.parent}, "
               "plus the selected custom path if present. Other custom paths are not listed.")
         print("Budgets do not expire. Registrations do not show whether sessions are running.")
     if resume:

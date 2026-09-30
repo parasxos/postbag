@@ -4,9 +4,26 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [1.3.0] - 2026-09-30
+
+MCP tools remove shell-command friction while retaining the existing bag,
+native transports, and human-controlled letter budget. Upgrade both peers
+to the same version, reconnect their MCP servers, and rejoin under the
+same names. Existing ledgers and remaining budgets need no migration.
 
 ### Added
+- Optional `postbag[mcp]` extra and `postbag-mcp` stdio entry point with four
+  tools: join, send, read, and bag inventory. Budgets remain human-controlled.
+  Tools bind native caller identity, accept named bags, return structured
+  outcomes, and isolate each invocation in a subprocess.
+- MCP wire tests for current and legacy clients, sender binding, private
+  socket delivery, concurrency, budget limits, pagination, and cancellation.
+- Installed-package native acceptance with Claude Code 2.1.285 and Codex
+  0.157.1 / desktop 0.158.0-alpha.2.1, including default server discovery,
+  model-authored replies, observed receipt, and spent-budget refusal.
+  Live Claude `/clear`, native Linux delivery and restricted spawned-agent
+  targets remain unverified. Forced process-tree termination can leave an
+  unknown submission outcome.
 - `postbag bags --resume` shows Claude resume commands using optional conversation
   IDs recorded at `join`. These snapshots do not change door identity or routing.
   Older or invalid metadata gets one rejoin reminder after the inventory.
@@ -27,6 +44,9 @@ uses [Semantic Versioning](https://semver.org/).
   `NO_COLOR` or `TERM=dumb` disables terminal styling.
 
 ### Changed
+- Report uncertain native submissions without advice to blindly resend.
+  Timeouts, partial socket writes, and nonzero queue exits may have delivered.
+  Recording failures preserve the fact that native submission succeeded.
 - Keep `bags --resume` in the ordinary compact inventory layout. Show missing-ID
   guidance once and brighten secondary terminal text for readability.
 - Clarify that postbag records submission, does not read delivery notices,
@@ -36,6 +56,15 @@ uses [Semantic Versioning](https://semver.org/).
   distinguishing live receipt from successful submission.
 - Verify the unchanged native transport between two headless Claude Code
   2.1.278 sessions on macOS, with separate recipient-policy probes.
+
+### Fixed
+- Prefer the concrete `CODEX_THREAD_ID` over the shared root's
+  `CODEX_SESSION_ID`, keeping the latter as a fallback for older hosts.
+  Existing peers whose thread differs from that shared ID need to join again.
+- Refuse NUL-containing messages and oversized native command arguments with
+  actionable errors before submission.
+- Render stored timestamps in canonical form so legacy timestamp separators
+  cannot inject terminal controls.
 
 ## [1.2.1] - 2026-09-09
 

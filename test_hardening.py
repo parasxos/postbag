@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -215,6 +216,31 @@ def test_invalid_utf8_ledger_is_a_clean_refusal(cli):
     assert cli.ledger.read_bytes() == original
 
 
+@pytest.mark.parametrize("separator", ["\0", "\x1b", "\x7f"])
+def test_legacy_control_timestamp_reads_canonically_without_changing_history(cli, separator):
+    cli.ledger.parent.mkdir()
+    original = json.dumps({"n": 1, "at": f"2026-09-08{separator}10:00:00+02:00",
+                           "kind": "open", "limit": 1}) + "\n"
+    cli.ledger.write_text(original, encoding="utf-8")
+    result = cli("read")
+    assert_ok(result)
+    assert "2026-09-08T10:00:00+02:00" in result.stdout
+    assert separator not in result.stdout + result.stderr
+    assert cli.ledger.read_text(encoding="utf-8") == original
+
+
+def test_legacy_control_timestamp_in_takeover_is_canonical(cli):
+    assert_ok(cli("join", "codex", peer="codex"))
+    record = rows(cli.ledger)[0]
+    record["at"] = "2026-09-08\x1b10:00:00+02:00"
+    cli.ledger.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    result = cli("join", "codex", peer="codex", extra={"CODEX_SESSION_ID": "fake-replacement"})
+    assert_ok(result)
+    assert "taken from the codex door that joined at 2026-09-08T10:00:00+02:00" in result.stdout
+    assert "\x1b" not in result.stdout + result.stderr
+    assert rows(cli.ledger)[0] == record
+
+
 @pytest.mark.parametrize("preexisting", [False, True])
 def test_join_keeps_ledger_private_even_with_permissive_umask(cli, preexisting):
     if preexisting:
@@ -322,6 +348,33 @@ def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex, same_vendor
     assert rows(cli.ledger)[-1]["body"] == body
 
 
+@pytest.mark.parametrize("sender, recipient", [("claude", "codex"), ("codex", "claude")])
+def test_nul_stdin_refuses_before_contacting_either_vendor(cli, fake_codex, sender, recipient):
+    prepare_exchange(cli, 1)
+    before = cli.ledger.read_bytes()
+    result = cli("send", recipient, "-", peer=sender, extra=fake_codex, input="hello\0world")
+    assert result.returncode == 1
+    assert "NUL byte" in result.stderr
+    assert "stop and ask the human" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert cli.ledger.read_bytes() == before
+    assert not Path(fake_codex["POSTBAG_TEST_CAPTURE"]).exists()
+
+
+def test_oversized_codex_stdin_is_a_clean_input_refusal(cli, fake_codex):
+    sender, recipient, extra = prepare_exchange(cli, 1)
+    before = cli.ledger.read_bytes()
+    # This exceeds macOS ARG_MAX and Linux's per-argument limit.
+    result = cli("send", recipient, "-", peer=sender, extra={**fake_codex, **extra}, input="x" * (1 << 20))
+    assert result.returncode == 1
+    assert "too large for codex queue, shorten it" in result.stderr
+    assert "stop and ask the human" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "join codex" not in result.stderr
+    assert cli.ledger.read_bytes() == before
+    assert not Path(fake_codex["POSTBAG_TEST_CAPTURE"]).exists()
+
+
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
 def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex, same_vendor):
     sender, recipient, sender_extra = prepare_exchange(cli, 1, same_vendor=same_vendor)
@@ -334,6 +387,8 @@ def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex,
 
     assert result.returncode != 0
     assert "codex queue exited 23" in result.stderr
+    assert "may already have reached" in result.stderr
+    assert "do not resend" in result.stderr
     # A stale door's stderr names its thread, a door field: the refusal relays none of it.
     assert "fake queue rejected" not in result.stderr
     assert SESSION_VARS["codex"]["CODEX_SESSION_ID"] not in result.stderr
@@ -342,6 +397,73 @@ def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex,
     assert cli.ledger.read_bytes() == before
     assert_ok(cli("send", recipient, "accepted", peer=sender, extra={**fake_codex, **sender_extra}))
     assert len([r for r in rows(cli.ledger) if r["kind"] == "letter"]) == 1
+
+
+@pytest.mark.parametrize("operation", ["ledger", "join", "send"])
+def test_nonblocking_mutations_refuse_a_busy_ledger_before_delivery(cli, operation):
+    prepare_exchange(cli, 1)
+    before = cli.ledger.read_bytes()
+    runner = textwrap.dedent("""
+        import json, runpy, sys
+        bag = runpy.run_path(sys.argv[1])
+        def no_contact(*args):
+            raise AssertionError('a busy-ledger request contacted a door')
+        for vendor in bag['KNOCK']:
+            bag['KNOCK'][vendor] = no_contact
+        try:
+            if sys.argv[2] == 'ledger':
+                with bag['ledger'](wait=False):
+                    raise AssertionError('busy ledger was acquired')
+            elif sys.argv[2] == 'join':
+                bag['join']('claude', wait=False)
+            else:
+                bag['send']('codex', 'must not be sent later', wait=False)
+        except bag['Refusal'] as error:
+            print(json.dumps({'error_code': error.error_code,
+                              'submission_state': error.submission_state,
+                              'message': str(error)}))
+        else:
+            raise AssertionError('busy operation did not refuse')
+    """)
+    with cli.ledger.open("r+") as holder:
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        result = subprocess.run(
+            [sys.executable, "-c", runner, str(SCRIPT), operation], env=cli.environment("claude"),
+            capture_output=True, text=True, timeout=3,
+        )
+    assert_ok(result)
+    refusal = json.loads(result.stdout)
+    assert refusal["error_code"] == "ledger_busy"
+    assert refusal["submission_state"] == "not_submitted"
+    assert "stop and ask the human" in refusal["message"]
+    assert result.stderr == ""
+    assert cli.ledger.read_bytes() == before
+
+
+def test_inventory_returns_data_without_output_or_credential_fields(tmp_path, monkeypatch, capsys):
+    import postbag
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ledger = tmp_path / ".postbag" / "ledger.jsonl"
+    monkeypatch.setenv("POSTBAG_LEDGER", str(ledger))
+    ledger.parent.mkdir()
+    conversation = "11111111-2222-3333-4444-555555555555"
+    records = [
+        {"n": 1, "at": "2026-09-30T10:00:00+02:00", "kind": "open", "limit": 2},
+        {"n": 2, "at": "2026-09-30T10:00:00+02:00", "kind": "join", "peer": "ada",
+         "vendor": "claude", "socket": "/tmp/fake-socket", "token": "fake-secret-token",
+         "session_id": conversation},
+    ]
+    original = "".join(json.dumps(record) + "\n" for record in records)
+    ledger.write_text(original, encoding="utf-8")
+    assert postbag.inventory() == (
+        [("default", "2/2", "-", [("ada", "claude")])],
+        {"remaining": 1, "spent": 0, "unopened": 0, "unavailable": 0},
+        {"default": [("ada", conversation)]}, [],
+    )
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+    assert ledger.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])

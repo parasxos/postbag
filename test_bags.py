@@ -270,17 +270,19 @@ def test_failed_transport_recovery_command_retains_bag_under_recipient_environme
     cli = bag_cli
     selector, extra, path, display = selection(cli, case)
     prepare(cli, selector, extra)
+    # A failed connection is a definite refusal. A Codex process exit after
+    # launch can be ambiguous and must instead warn against resending.
+    ok(cli.run(*scoped(selector), "join", "claude", "bob", peer="bob", vendor="claude", extra=extra))
     before = path.read_bytes()
-    result = cli.run(*scoped(selector), "send", "@bob", "rejected", peer="ada",
-                     extra={**extra, "POSTBAG_TEST_REJECT": "1"})
+    result = cli.run(*scoped(selector), "send", "@bob", "rejected", peer="ada", extra=extra)
     assert result.returncode != 0 and path.read_bytes() == before
     assert f"bag {display}" in result.stderr
-    command = f"postbag --bag {command_selector(display)} join codex bob"
+    command = f"postbag --bag {command_selector(display)} join claude bob"
     assert "it must run: " + command in result.stderr
     assert "stop and ask the human" in result.stderr
     conflicting = cli.cwd / "recipient-recovery-environment.jsonl"
     assert f"in bag {display}" in ok(cli.run(
-        *shlex.split(command)[1:], peer="bob", extra={"POSTBAG_LEDGER": str(conflicting)},
+        *shlex.split(command)[1:], peer="bob", vendor="claude", extra={"POSTBAG_LEDGER": str(conflicting)},
     ))
     assert not conflicting.exists()
     assert rows(path)[-1]["kind"] == "join" and rows(path)[-1]["peer"] == "bob"

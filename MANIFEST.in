@@ -6,5 +6,7 @@ include test_bags.py test_bag_context.py
 include test_inventory.py
 include test_inventory_terminal.py
 include test_resume.py
+include test_mcp.py
 include docs/demo.tape docs/demo-env.sh docs/readme-research.md
 include docs/native-compatibility.md
+include docs/mcp.md

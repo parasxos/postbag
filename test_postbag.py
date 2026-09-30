@@ -36,6 +36,7 @@ def bag(tmp_path, monkeypatch):
 def be(monkeypatch):
     """be("claude") puts the shell inside that session; be(None) makes it a human's terminal."""
     def _be(peer):
+        monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
         for env in VARS.values():
             for var in env:
                 monkeypatch.delenv(var, raising=False)
@@ -320,8 +321,8 @@ def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypa
     real = joined.ledger
 
     @__import__("contextlib").contextmanager
-    def broken():
-        with real() as write:
+    def broken(**kwargs):
+        with real(**kwargs) as write:
             def w(rec):
                 if rec["kind"] == "letter":
                     raise OSError("disk full")
