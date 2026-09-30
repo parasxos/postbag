@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -386,6 +387,8 @@ def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex,
 
     assert result.returncode != 0
     assert "codex queue exited 23" in result.stderr
+    assert "may already have reached" in result.stderr
+    assert "do not resend" in result.stderr
     # A stale door's stderr names its thread, a door field: the refusal relays none of it.
     assert "fake queue rejected" not in result.stderr
     assert SESSION_VARS["codex"]["CODEX_SESSION_ID"] not in result.stderr
@@ -394,6 +397,73 @@ def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex,
     assert cli.ledger.read_bytes() == before
     assert_ok(cli("send", recipient, "accepted", peer=sender, extra={**fake_codex, **sender_extra}))
     assert len([r for r in rows(cli.ledger) if r["kind"] == "letter"]) == 1
+
+
+@pytest.mark.parametrize("operation", ["ledger", "join", "send"])
+def test_nonblocking_mutations_refuse_a_busy_ledger_before_delivery(cli, operation):
+    prepare_exchange(cli, 1)
+    before = cli.ledger.read_bytes()
+    runner = textwrap.dedent("""
+        import json, runpy, sys
+        bag = runpy.run_path(sys.argv[1])
+        def no_contact(*args):
+            raise AssertionError('a busy-ledger request contacted a door')
+        for vendor in bag['KNOCK']:
+            bag['KNOCK'][vendor] = no_contact
+        try:
+            if sys.argv[2] == 'ledger':
+                with bag['ledger'](wait=False):
+                    raise AssertionError('busy ledger was acquired')
+            elif sys.argv[2] == 'join':
+                bag['join']('claude', wait=False)
+            else:
+                bag['send']('codex', 'must not be sent later', wait=False)
+        except bag['Refusal'] as error:
+            print(json.dumps({'error_code': error.error_code,
+                              'submission_state': error.submission_state,
+                              'message': str(error)}))
+        else:
+            raise AssertionError('busy operation did not refuse')
+    """)
+    with cli.ledger.open("r+") as holder:
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        result = subprocess.run(
+            [sys.executable, "-c", runner, str(SCRIPT), operation], env=cli.environment("claude"),
+            capture_output=True, text=True, timeout=3,
+        )
+    assert_ok(result)
+    refusal = json.loads(result.stdout)
+    assert refusal["error_code"] == "ledger_busy"
+    assert refusal["submission_state"] == "not_submitted"
+    assert "stop and ask the human" in refusal["message"]
+    assert result.stderr == ""
+    assert cli.ledger.read_bytes() == before
+
+
+def test_inventory_returns_data_without_output_or_credential_fields(tmp_path, monkeypatch, capsys):
+    import postbag
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ledger = tmp_path / ".postbag" / "ledger.jsonl"
+    monkeypatch.setenv("POSTBAG_LEDGER", str(ledger))
+    ledger.parent.mkdir()
+    conversation = "11111111-2222-3333-4444-555555555555"
+    records = [
+        {"n": 1, "at": "2026-09-30T10:00:00+02:00", "kind": "open", "limit": 2},
+        {"n": 2, "at": "2026-09-30T10:00:00+02:00", "kind": "join", "peer": "ada",
+         "vendor": "claude", "socket": "/tmp/fake-socket", "token": "fake-secret-token",
+         "session_id": conversation},
+    ]
+    original = "".join(json.dumps(record) + "\n" for record in records)
+    ledger.write_text(original, encoding="utf-8")
+    assert postbag.inventory() == (
+        [("default", "2/2", "-", [("ada", "claude")])],
+        {"remaining": 1, "spent": 0, "unopened": 0, "unavailable": 0},
+        {"default": [("ada", conversation)]}, [],
+    )
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+    assert ledger.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])

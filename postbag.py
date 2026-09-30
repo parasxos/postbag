@@ -225,7 +225,7 @@ def record(kind, **fields):
 
 
 @contextmanager
-def ledger(create=False):
+def ledger(create=False, *, wait=True):
     """The ledger held exclusively and made private; yields the function that appends one record."""
     global _held
     path = ledger_path()
@@ -251,9 +251,12 @@ def ledger(create=False):
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
         fail(f"the ledger is not a regular file ({path})")
-    os.fchmod(fd, 0o600)
     with os.fdopen(fd, "a+", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except BlockingIOError:
+            fail("the ledger is busy, try again after its current operation finishes", error_code="ledger_busy")
+        os.fchmod(f.fileno(), 0o600)
         _held = f
         try:
             yield lambda rec: (f.write(json.dumps(rec) + "\n"), f.flush(), os.fsync(f.fileno()))
@@ -409,7 +412,8 @@ def knock_codex(door, text):
                                  error_code="invalid_input") from e
         raise
     if run.returncode:  # its output is never read: it can echo the thread, a door field, or bytes that do not decode
-        raise OSError(f"codex queue exited {run.returncode}")
+        raise TransportError(f"codex queue exited {run.returncode}", error_code="submission_unknown",
+                             submission_state="unknown")
 
 
 KNOCK = {"claude": knock_claude, "codex": knock_codex}
@@ -435,13 +439,13 @@ def envelope(rec, state):
 
 # verbs ----------------------------------------------------------------------
 
-def join(source, peer=None):
+def join(source, peer=None, *, wait=True):
     peer = name(source if peer is None else peer)
     if source not in inside():
         fail(f"join {source} from inside a {source} session")
     if peer in PEERS and peer != source:
         fail(f"@{peer} is reserved for {peer} doors")
-    with ledger() as write:
+    with ledger(wait=wait) as write:
         state = Snapshot(records())
         rec = record("join", peer=peer, vendor=source,
                      **{field: os.environ[var] for field, var in SESSION[source].items()})
@@ -461,7 +465,7 @@ def open_exchange(limit):
     print(f"exchange open: {limit} letters in bag {bag().label}")
 
 
-def send(to, body):
+def send(to, body, *, wait=True):
     """Submit once; return receipt metadata without asserting recipient acceptance."""
     to = name(to, mention=True)
     if "\0" in body:
@@ -470,7 +474,7 @@ def send(to, body):
         fail("a letter needs text", error_code="invalid_input")
     submitted = None  # the letter, once its door took it: from then on a failure must not invite a resend
     try:
-        with ledger() as write:
+        with ledger(wait=wait) as write:
             state = Snapshot(records())
             sender = state.sender()
             if sender == to:
@@ -664,8 +668,8 @@ def terminal_inventory(rows, counts, resumptions=None):
     line("Scope: ~/.postbag + selected custom path if present. Other paths are not listed.")
 
 
-def bags(resume=False):
-    """Inventory existing local ledgers, without storing state or contacting doors."""
+def inventory():
+    """Return rows, counts, resume metadata and problems without printing or contacting doors."""
     selected = bag()
     default = Bag("default")
     directory = default.path.parent / "bags"
@@ -736,10 +740,9 @@ def bags(resume=False):
                          for rec, *_ in reversed(state.history) if rec["kind"] == "letter"), "-")
             peers = [(peer, vendor(rec)) for peer, rec in sorted(state.peers.items())]
             rows.append((candidate.label, left, last, peers))
-            if resume:
-                resumptions[candidate.label] = [
-                    (peer, session_id(rec.get("session_id")))
-                    for peer, rec in sorted(state.peers.items()) if vendor(rec) == "claude"]
+            resumptions[candidate.label] = [
+                (peer, session_id(rec.get("session_id")))
+                for peer, rec in sorted(state.peers.items()) if vendor(rec) == "claude"]
         except (SystemExit, OSError, UnicodeError, ValueError, RecursionError) as e:
             counts["unavailable"] += 1
             rows.append((candidate.label, "unavailable", "-", None))
@@ -753,6 +756,12 @@ def bags(resume=False):
         finally:
             _selection.reset(token)
 
+    return rows, counts, resumptions, problems
+
+
+def bags(resume=False):
+    """Inventory existing local ledgers, without storing state or contacting doors."""
+    rows, counts, resumptions, problems = inventory()
     if sys.stdout.isatty():
         terminal_inventory(rows, counts, resumptions if resume else None)
     else:
@@ -769,7 +778,7 @@ def bags(resume=False):
             print(" | ".join([*(row[i].ljust(widths[i]) for i in range(3)), row[3]]))
             if resume:
                 print_resumes(resumptions.get(row[0], []))
-        print(f"Scope: default and named bags under {default.path.parent}, "
+        print(f"Scope: default and named bags under {Bag('default').path.parent}, "
               "plus the selected custom path if present. Other custom paths are not listed.")
         print("Budgets do not expire. Registrations do not show whether sessions are running.")
     if resume:

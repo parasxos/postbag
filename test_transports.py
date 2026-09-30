@@ -73,6 +73,28 @@ def test_codex_timeout_after_submission_warns_without_retry_or_append(joined, mo
     assert joined.budget() == 3
 
 
+def test_codex_nonzero_exit_after_submission_has_an_unknown_outcome(joined, monkeypatch):
+    monkeypatch.setenv("POSTBAG_CODEX", sys.executable)
+    monkeypatch.setitem(joined.KNOCK, "codex", postbag.knock_codex)
+    submissions = []
+
+    def submitted_then_failed(argv, **kwargs):
+        submissions.append(argv[-1])
+        return subprocess.CompletedProcess(argv, 23)
+
+    monkeypatch.setattr(postbag.subprocess, "run", submitted_then_failed)
+    before = joined.ledger_path().read_bytes()
+    with pytest.raises(postbag.Refusal, match="may already have reached.*do not resend") as error:
+        joined.send("codex", "submission before process failure")
+    assert error.value.error_code == "submission_unknown"
+    assert error.value.submission_state == "unknown"
+    assert "codex queue exited 23" in str(error.value)
+    assert "join codex" not in str(error.value)
+    assert len(submissions) == 1
+    assert joined.ledger_path().read_bytes() == before
+    assert joined.budget() == 3
+
+
 @pytest.mark.parametrize("failure_at", ["connect", "write"])
 def test_claude_connection_and_partial_write_failures_have_distinct_outcomes(
     joined, be, monkeypatch, failure_at,
@@ -118,8 +140,9 @@ def test_claude_connection_and_partial_write_failures_have_distinct_outcomes(
     assert joined.budget() == 3
 
 
-def test_send_returns_submission_metadata_without_body_or_credentials(joined):
-    result = joined.send("codex", "one recorded submission")
+@pytest.mark.parametrize("wait", [True, False])
+def test_send_returns_submission_metadata_without_body_or_credentials(joined, wait):
+    result = joined.send("codex", "one recorded submission", wait=wait)
     assert result == {
         "bag": str(joined.ledger_path()), "from": "claude", "to": "codex", "record": 4,
         "exchange": 1, "letter": 1, "remaining": 2, "submission_state": "submitted",
@@ -136,8 +159,8 @@ def test_failed_append_reports_that_submission_already_happened(joined, monkeypa
     original = joined.ledger
 
     @contextmanager
-    def broken_append():
-        with original():
+    def broken_append(**kwargs):
+        with original(**kwargs):
             def write(rec):
                 raise OSError("simulated disk full")
             yield write
