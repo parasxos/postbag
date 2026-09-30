@@ -39,6 +39,12 @@ Restart or reconnect the MCP server after changing its configuration or
 upgrading Postbag. Do not configure session IDs, socket paths, or tokens by
 hand. Keep the host's normal permission prompts and native inbound policy.
 
+If multiple Codex installations are present, set `POSTBAG_CODEX` in the MCP
+server's environment to the executable belonging to the intended host.
+This selects the native queue command, not the sender's identity. It avoids
+shell `PATH` order selecting a different installed runtime. Use the same
+setting for CLI participants when selecting that runtime is necessary.
+
 MCP tools run in the server process, outside the agent's command sandbox.
 A read-only command sandbox therefore does not prevent these tools from
 writing the ledger or contacting a recipient. Hosts may approve MCP calls
@@ -63,6 +69,49 @@ bag and sender. CLI participants need the same version's `postbag` executable
 on their shell's `PATH`; configuring an absolute MCP command alone does not
 put it there. For a checkout installation, launch those sessions with the
 venv's `bin` directory prepended to `PATH`.
+
+## Upgrade existing sessions
+
+Upgrade the installation that provides both commands. For a pipx-managed
+installation, use `pipx upgrade postbag` if the MCP extra is already installed.
+To add MCP to a CLI-only pipx installation, use
+`pipx install --force 'postbag[mcp]'`. If `postbag` is a manual symlink to a
+checkout, preserve that link before replacing it with the package installation.
+Check `command -v postbag`, `postbag --version`, and `postbag-mcp --version`
+in each session so an older executable cannot keep taking over its MCP identity.
+
+After installing or upgrading, restart or reconnect the host's MCP server.
+A running server keeps its imported code until restarted. Sessions that do
+not yet expose the new tools can keep using the upgraded CLI.
+
+- In the ChatGPT desktop app, use **Settings > MCP servers**, save the
+  configuration, then select **Restart**. This refreshes loaded threads on
+  that app-server. Independently running app-servers need their own refresh.
+  [Desktop setup](https://learn.chatgpt.com/docs/extend/mcp?surface=cli#configure-in-the-chatgpt-desktop-app).
+- In a standalone Codex CLI session, finish the current turn, exit, and use
+  `codex resume` to reopen the conversation with the new configuration.
+  `/mcp` lists tools; it is not a reload command. Verify Postbag appears.
+  If another client keeps that same thread loaded, its existing server
+  configuration can persist; refresh the owning server as well.
+- In Claude Code, use `/mcp` and **Reconnect** if Postbag is listed. If the
+  newly registered server is absent, exit and use `claude --resume` to
+  reopen the conversation in a new process, then check `/mcp` again.
+  [Reconnect](https://code.claude.com/docs/en/mcp#automatic-reconnection),
+  [resume a session](https://code.claude.com/docs/en/sessions#resume-a-session).
+
+Existing bags, letters and remaining budgets are retained. Do not run `open`
+to migrate an existing exchange: it starts a new budget. Rejoin under the
+same name if the native session restarted, or if a Codex join used the older
+shared root ID. A join does not spend a letter or reset the budget. A Claude
+process whose inbox is unchanged needs no rejoin. Use CLI `join` when you
+want to keep a current `bags --resume` hint; MCP joins deliberately omit the
+conversation ID.
+
+For new sessions, the host starts the configured MCP server automatically.
+Ask the agent to join the intended existing bag under its own peer name.
+For a new collaboration, open a named bag in your terminal first, then ask
+each agent to join it under a distinct name. Registered peers can use MCP
+and CLI interchangeably at the same version.
 
 ## Tools
 
@@ -170,8 +219,11 @@ Run the suite with:
 ```
 
 Native runtime evidence and remaining limits are recorded in
-[native-compatibility.md](native-compatibility.md). The cross-vendor native
-round trip used a private app-server through `codex queue --remote`.
-Default shared-server routing remains unverified on the current native
-runtimes. Linux fixture tests do not establish native vendor acceptance on
-Linux. Windows is unsupported.
+[native-compatibility.md](native-compatibility.md). The installed 1.3.0
+candidate passed a cross-vendor native round trip and spent-budget refusal
+using default shared-server discovery in an isolated state directory, with
+the current desktop executable and no queue wrapper or `--remote`. Earlier
+checks covered explicit-remote routing and mixed CLI/MCP replies. These
+checks did not modify or test the user's personal running daemon. Linux
+fixture tests do not establish native vendor acceptance on Linux. A live
+Claude `/clear` transition remains untested. Windows is unsupported.

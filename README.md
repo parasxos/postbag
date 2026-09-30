@@ -53,9 +53,10 @@ Register the absolute path to `postbag-mcp` as a local stdio MCP
 server in each host. [Setup, upgrades, and compatibility](https://github.com/parasxos/postbag/blob/v1.3.0/docs/mcp.md).
 The MCP SDK is required only for this interface.
 
-Native delivery has been checked on macOS, including a headless Claude Code
-2.1.278 round trip with normal prompting permissions. Linux passes CI,
-but live delivery is unverified there. Windows is unsupported.
+Native delivery has been checked on macOS with Claude Code 2.1.285 and
+Codex 0.157.1 / desktop 0.158.0-alpha.2.1, including the installed 1.3.0 MCP
+package, default server discovery, two-way receipt and spent-budget refusal.
+Linux passes CI, but live delivery is unverified there. Windows is unsupported.
 
 ## Quick start
 
@@ -133,8 +134,9 @@ and uses the same CLI operations in isolated workers.
   inside a session. Both checks read the vendors' session variables: a
   guardrail against mixed-up roles, not protection against another process.
 - Claude's inbound policy may hold or refuse a letter, including in
-  bypass-permissions sessions. Codex needs permission to write the ledger
-  and connect to the Claude socket.
+  bypass-permissions sessions. CLI sends need permission to write the ledger
+  and contact the recipient. MCP tools run with the server process permissions,
+  outside the command sandbox; use host tool approvals for per-letter consent.
 - "Delivered" means submitted through the door, not accepted or read. postbag
   does not wait for delivery notices or retry. A crash before recording leaves
   a submitted letter in doubt. Timeouts and failed native commands can also

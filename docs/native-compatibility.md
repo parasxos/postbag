@@ -1,5 +1,75 @@
 # Native compatibility checks
 
+## 30 September 2026: installed 1.3.0 release candidate
+
+The clean wheel built from `878a4a6` passed the native release gate on
+macOS 27.0.1 (build 26A434), with Python 3.14.6 and MCP SDK 2.2.0. Both
+modules were imported from the fresh environment's `site-packages`, outside
+any checkout. The installed version and distribution metadata both read
+`1.3.0`.
+
+The decisive run used the current desktop Codex executable and app-server,
+both **0.158.0-alpha.2.1**, and **Claude Code 2.1.285**. `POSTBAG_CODEX`
+selected that real executable directly. The native queue used its standard
+shared-server discovery in a private `CODEX_HOME`, with **no `--remote` and
+no queue wrapper**. The private app-server listened on its normal control
+socket. The personal desktop daemon and its live threads were untouched.
+This closes the default-discovery gap in the earlier explicit-remote checks
+below; it does not claim a test of the user's existing personal daemon.
+
+| Check | Observed result |
+|---|---|
+| Codex to Claude | Model-authored MCP send returned `submitted`. Claude's idle native inbox started a turn and generated the nonce-derived answer. |
+| Claude to Codex | Model-authored MCP reply returned `submitted`. Default native queue delivery started a third turn, which printed the exact nonce and computed answer. |
+| Identity | MCP join recorded the concrete thread returned by the native host. Both peers joined once. |
+| Ledger | Exactly two letters in opposite directions, with zero remaining. |
+| Exhaustion | A separate human test prompt requested one extra model-authored send. It returned `refused` and `not_submitted`. The ledger stayed byte-identical and Claude received no further turn. |
+| Cleanup | Both clients and the private server exited 0, endpoints closed, and the temporary authentication symlink was removed. |
+
+Codex reported a read-only command sandbox with network access disabled,
+`approvalPolicy: never`, and explicit approvals limited to the four Postbag
+MCP tools. Claude launched with manual permissions and only those tools
+allowlisted; its native initialization described the mode as `default`.
+`crossSessionInbound` was unset, with empty setting sources. No interactive
+human approval was needed during the exchange. Native own-child
+classification was not observed, so independent processes are not presented
+as proof that this classification was absent.
+
+Additional runs exercised the same installed package with Codex 0.157.1 on
+both queue and server, and with a 0.157.1 queue talking to the 0.158 desktop
+server. Both exchanges and exhausted-budget refusals succeeded. The first
+harness incorrectly expected a refused MCP call to have status `completed`
+and treated all queue-change events as submissions. A separate version
+probe also inherited a checkout working directory. These assertions were
+corrected using the native error receipt, unchanged ledger, recipient turn
+count, and an isolated installed-package probe; the original failed harness
+report was retained. The mixed-version run exposed PATH selection and did
+not meet its intended same-executable assertion. The final pinned desktop
+run above passed without rewriting its initial verdict.
+
+Candidate provenance:
+
+```text
+wheel         53e485058cd63e8454521a0bde9823ba87025d97a7e15a962a7f1c48b89f33e3
+postbag.py    039237cfe4d86c2e28cd59297f8a2e06faff773d05d20dd44bee2e00840605dd
+postbag_mcp.py fc624e16d897f5cff253691dd239cf049489d6fc4206fce29d206b5f501e237b
+```
+
+Later release-documentation edits change the distribution archive, not these
+runtime modules. The stable candidate passed **397 tests**; its clean wheel
+with the MCP extra passed **48 wire tests** outside the checkout. Wheel and
+source archive metadata and fresh base installations passed. An actual
+published 1.2.1 installation read a fixture ledger containing 1.3.0 MCP joins
+and letters without modification, retaining the correct exhausted budget.
+All 11 candidate CI jobs passed on macOS/Linux and Python 3.10 through 3.14.
+[Candidate CI](https://github.com/parasxos/postbag/actions/runs/36721883077).
+
+Remaining limits: live Claude `/clear` was not exercised; native Linux
+delivery and restricted spawned-agent targets remain unverified. Forced
+termination of an entire process tree can still leave a submission outcome
+unknown. The package does not infer receipt from a successful send alone.
+
+
 ## 19 September 2026: Claude Code 2.1.278
 
 The unchanged Claude socket transport passed a round trip between two

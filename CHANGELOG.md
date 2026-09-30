@@ -18,6 +18,12 @@ same names. Existing ledgers and remaining budgets need no migration.
   outcomes, and isolate each invocation in a subprocess.
 - MCP wire tests for current and legacy clients, sender binding, private
   socket delivery, concurrency, budget limits, pagination, and cancellation.
+- Installed-package native acceptance with Claude Code 2.1.285 and Codex
+  0.157.1 / desktop 0.158.0-alpha.2.1, including default server discovery,
+  model-authored replies, observed receipt, and spent-budget refusal.
+  Live Claude `/clear`, native Linux delivery and restricted spawned-agent
+  targets remain unverified. Forced process-tree termination can leave an
+  unknown submission outcome.
 - `postbag bags --resume` shows Claude resume commands using optional conversation
   IDs recorded at `join`. These snapshots do not change door identity or routing.
   Older or invalid metadata gets one rejoin reminder after the inventory.
