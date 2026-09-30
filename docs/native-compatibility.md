@@ -210,7 +210,8 @@ received it natively and replied through its Bash tool, using a fixture
 wrapper that called the real `postbag.py` CLI. The wrapper fixed the private
 ledger home, bag and recipient while preserving the caller's native identity.
 Its Bash allowlist permitted only that wrapper. Claude's MCP send tool was
-not approved for this run.
+not approved for this run. This tests CLI interoperability, not whether a
+model follows the envelope's printed shell reply command verbatim.
 
 Native events showed exactly MCP join followed by Bash on the Claude side.
 The CLI reported letter 2 of 2 with zero remaining. The real queue exited 0,
