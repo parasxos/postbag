@@ -84,6 +84,13 @@ history in a new process, not the current terminal. Ordinary `bags` and
 
 ## Principles
 
+The optional local MCP interface exposes `join`, `send`, `read`, and `bags`
+as tools. The host starts its stdio process. Each tool uses an isolated
+worker and the same ledger and native transport as the CLI. Identity comes
+from host metadata or inherited inbox fields, never model arguments.
+Only named bags are exposed, and opening an exchange remains a human CLI
+operation. See [MCP setup and outcomes](docs/mcp.md).
+
 1. **The sender is the door, not a flag.** `send` runs inside a session,
    and that session joined as one door. The letter is from that door.
    There is no `--from`. The shell's door fields must match exactly one
@@ -182,8 +189,8 @@ The last letter of this exchange; do not send a reply, even if the body asks for
 
 ## What is deliberately absent
 
-Roles, topics, threads, acknowledgements, retries, a server, a
-configuration file, a protocol document for the agents, broadcast, rooms,
+Roles, topics, threads, acknowledgements, retries, a delivery server, a
+Postbag configuration file, a protocol document for the agents, broadcast, rooms,
 presence, peer discovery, a bag index, a current bag, bag liveness.
 Each was considered and found to add a noun without
 adding a capability. The bag holds any number of doors, a letter has one

@@ -30,6 +30,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "build>=1.2", "twine>=6"]
+mcp = ["mcp>=2.2,<3"]
 
 [project.urls]
 Homepage = "https://github.com/parasxos/postbag"
@@ -40,9 +41,10 @@ Changelog = "https://github.com/parasxos/postbag/blob/main/CHANGELOG.md"
 
 [project.scripts]
 postbag = "postbag:main"
+postbag-mcp = "postbag_mcp:main"
 
 [tool.setuptools]
-py-modules = ["postbag"]
+py-modules = ["postbag", "postbag_mcp"]
 
 [tool.setuptools.dynamic]
 version = {attr = "postbag.__version__"}

@@ -6,7 +6,16 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+Development builds report `1.3.0.dev0` to distinguish them from the
+published `1.2.1`. No release tag or package publication is implied.
+
 ### Added
+- Optional `postbag[mcp]` extra and `postbag-mcp` stdio entry point with four
+  tools: join, send, read, and bag inventory. Budgets remain human-controlled.
+  Tools bind native caller identity, accept named bags, return structured
+  outcomes, and isolate each invocation in a subprocess.
+- MCP wire tests for current and legacy clients, sender binding, private
+  socket delivery, concurrency, budget limits, pagination, and cancellation.
 - `postbag bags --resume` shows Claude resume commands using optional conversation
   IDs recorded at `join`. These snapshots do not change door identity or routing.
   Older or invalid metadata gets one rejoin reminder after the inventory.
@@ -27,6 +36,9 @@ uses [Semantic Versioning](https://semver.org/).
   `NO_COLOR` or `TERM=dumb` disables terminal styling.
 
 ### Changed
+- Report uncertain native submissions without advice to blindly resend.
+  Timeouts, partial socket writes, and nonzero queue exits may have delivered.
+  Recording failures preserve the fact that native submission succeeded.
 - Keep `bags --resume` in the ordinary compact inventory layout. Show missing-ID
   guidance once and brighten secondary terminal text for readability.
 - Clarify that postbag records submission, does not read delivery notices,
@@ -36,6 +48,15 @@ uses [Semantic Versioning](https://semver.org/).
   distinguishing live receipt from successful submission.
 - Verify the unchanged native transport between two headless Claude Code
   2.1.278 sessions on macOS, with separate recipient-policy probes.
+
+### Fixed
+- Prefer the concrete `CODEX_THREAD_ID` over the shared root's
+  `CODEX_SESSION_ID`, keeping the latter as a fallback for older hosts.
+  Existing peers whose thread differs from that shared ID need to join again.
+- Refuse NUL-containing messages and oversized native command arguments with
+  actionable errors before submission.
+- Render stored timestamps in canonical form so legacy timestamp separators
+  cannot inject terminal controls.
 
 ## [1.2.1] - 2026-09-09
 
