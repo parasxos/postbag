@@ -360,6 +360,78 @@ def test_payload_limit_is_utf8_bytes_and_rejection_preserves_budget(wire):
     assert len(wire.calls()) == 1
 
 
+def test_worker_refuses_unpaired_surrogate_before_submission(wire, tmp_path):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+    before = wire.path().read_bytes()
+    # The SDK client rejects this value before serialization. Exercise the worker
+    # boundary directly with ASCII JSON containing the escaped lone surrogate.
+    request = {"operation": "send", "vendor": "codex", "arguments": {
+        "bag": "default", "to": "bob", "body": "invalid \ud800 text"}}
+    completed = subprocess.run(
+        [sys.executable, str(SERVER_SCRIPT), "--worker"], cwd=tmp_path,
+        env={**wire.environment, "CODEX_THREAD_ID": THREAD_A, "CODEX_SESSION_ID": THREAD_A},
+        input=json.dumps(request).encode("ascii"), capture_output=True, timeout=15,
+    )
+    assert completed.returncode == 0 and completed.stderr == b""
+    invalid = json.loads(completed.stdout)
+    assert invalid["ok"] is False
+    assert invalid["error_code"] == "invalid_input"
+    assert invalid["submission_state"] == "not_submitted"
+    assert wire.path().read_bytes() == before and wire.calls() == []
+
+    async def exercise():
+        async with wire.session() as client:
+            checked(await client.call_tool("postbag_send", {"to": "bob", "body": "valid follow-up"}, meta=meta()))
+    asyncio.run(exercise())
+    assert len(wire.calls()) == 1
+
+
+def test_malformed_historical_surrogate_cannot_poison_mcp_output(wire):
+    wire.seed(opened(2), letter("corrupted \ud800 history"))
+    before = wire.path().read_bytes()
+
+    async def exercise():
+        async with wire.session() as client:
+            result = checked(await client.call_tool("postbag_read", {}), ok=False)
+            assert result["submission_state"] is None
+            assert "corrupted" not in json.dumps(result)
+            checked(await client.call_tool("postbag_bags", {}))
+            checked(await client.call_tool("postbag_join", {"name": "ada"}, meta=meta()))
+    asyncio.run(exercise())
+    assert wire.path().read_bytes().startswith(before)
+    assert wire.calls() == []
+
+
+def test_worker_response_survives_ascii_locale_for_unicode_read_and_valid_send(wire, tmp_path):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(2), letter("Καλημέρα 🌍"))
+    environment = {**wire.environment, "LC_ALL": "C", "LANG": "C",
+                   "CODEX_THREAD_ID": THREAD_A, "CODEX_SESSION_ID": THREAD_A}
+    python = [sys.executable, "-X", "utf8=0", "-E", "-s"]
+    encoding = subprocess.run(
+        [*python, "-c", "import sys; print(sys.stdout.encoding)"],
+        cwd=tmp_path, env=environment, capture_output=True, check=True,
+    )
+    assert encoding.stdout.strip().lower() in (b"ascii", b"ansi_x3.4-1968", b"us-ascii")
+
+    def request(operation, arguments):
+        message = {"operation": operation, "arguments": arguments, "vendor": "codex"}
+        completed = subprocess.run(
+            [*python, str(SERVER_SCRIPT), "--worker"], cwd=tmp_path, env=environment,
+            input=json.dumps(message).encode("ascii"), capture_output=True, timeout=15,
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stderr == b""
+        # An ASCII response is valid UTF-8 regardless of the host's text encoding.
+        return json.loads(completed.stdout.decode("ascii"))
+
+    reading = request("read", {"bag": "default", "limit": 20, "before": None})
+    assert reading["ok"] is True
+    assert reading["data"]["records"][-1]["body"] == "Καλημέρα 🌍"
+    sent = request("send", {"bag": "default", "to": "bob", "body": "valid locale-independent send"})
+    assert sent["ok"] is True and sent["submission_state"] == "submitted"
+    assert len(wire.calls()) == 1
+
+
 def test_cancelled_call_finishes_recording_inflight_submission(wire):
     wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
 
