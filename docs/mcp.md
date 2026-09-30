@@ -36,6 +36,14 @@ Restart or reconnect the MCP server after changing its configuration or
 upgrading Postbag. Do not configure session IDs, socket paths, or tokens by
 hand. Keep the host's normal permission prompts and native inbound policy.
 
+MCP tools run in the server process, outside the agent's command sandbox.
+A read-only command sandbox therefore does not prevent these tools from
+writing the ledger or contacting a recipient. Hosts may approve MCP calls
+automatically according to their tool settings. The human-opened budget
+limits the number of letters; use the host's tool-approval settings if each
+letter should also require confirmation. The recipient keeps its own
+permissions and inbound policy.
+
 The human opens a named bag from a terminal outside agent sessions:
 
 ```sh
@@ -104,6 +112,8 @@ Distinct names do not establish reachability: the native queue rejects some
 spawned subagents, including unloaded spawned threads and loaded threads
 using the newer multi-agent mode. Use the host's native orchestration for
 those targets. [Queue restriction in 0.157.1](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/app-server/src/request_processors/thread_queue_processor.rs#L292-L309).
+Ephemeral threads also cannot receive queued submissions. Use a persisted
+session for a receiving peer. [Ephemeral target restriction](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/app-server/src/request_processors/thread_queue_processor.rs#L255-L263).
 Claude subagents sharing the same inbox act as the same peer. Postbag
 does not create or supervise either kind of agent. A registered peer is not
 evidence that its session is still running.
@@ -157,5 +167,8 @@ Run the suite with:
 ```
 
 Native runtime evidence and remaining limits are recorded in
-[native-compatibility.md](native-compatibility.md). Linux fixture tests do
-not establish native vendor acceptance on Linux. Windows is unsupported.
+[native-compatibility.md](native-compatibility.md). The cross-vendor native
+round trip used a private app-server through `codex queue --remote`.
+Default shared-server routing remains unverified on the current native
+runtimes. Linux fixture tests do not establish native vendor acceptance on
+Linux. Windows is unsupported.
