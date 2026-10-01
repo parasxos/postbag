@@ -27,7 +27,7 @@ hosts that run them, not by postbag.
 | `send @name` | a peer, from inside its own session | knocks on that door, then records the letter. `--final` marks the letter as one that asks for no reply. |
 | `read` | anyone | prints the ledger, preceded by one line: the names held now and the number of letters |
 | `bags` | anyone | inventories existing ledgers in scope: letters recorded, last recorded letter time, and registered names with vendors |
-| `leave` | a peer, from inside its own session | releases the name its door holds in the bag. Letters to that name refuse until a door joins it again. |
+| `leave` | a peer, from inside its own session | withdraws its door's registration from the bag. Until a door joins again, letters to that name refuse and this door can neither send nor be sent to there. |
 
 Every verb takes an optional `--bag NAME` before it. `join` creates any
 bag that does not exist, default, named or path alike. `send` and `read`
@@ -175,19 +175,38 @@ Joining creates a bag from either interface. See
 
 ## Leaving
 
-`leave` is the one thing a session can do to stop receiving letters in a
-bag without ending itself. It appends a `leave` record naming the door's
-current name. Replaying it drops the name from the bag, exactly as a later
-`join` by another door would, so a `send` to that name refuses with "not
-registered" and says when the name was left. The door itself is untouched:
-the session keeps running, letters already queued to a Codex thread still
-arrive, a send already past its lookup still knocks, and a `join` makes
-the door addressable again, under the same or another name. `leave` from a
-door that holds no name in the bag refuses. It never deletes the bag or
-its history. Over MCP it is `postbag_leave` with the bag, and the name is
-derived from the door, never passed. Readers older than this version
-refuse a ledger that holds a `leave` record as not a record, so both
-sessions run the same postbag, as everywhere.
+`leave` is a recorded withdrawal, the one thing a session can do to stop
+corresponding in a bag without ending itself. It appends a `leave` record
+that carries the door's name, vendor and door fields, like a `join`
+without its navigation metadata. Replaying it removes the binding, and
+only when that name is still held by that exact door. A `leave` whose
+name is held by another door, or by nobody, makes the ledger inconsistent
+and the bag refuses to read, so a stale leave can never unregister a door
+that took the name later. After a leave, a `send` to that name refuses as
+not registered and says when it was left, and the door that left cannot
+send in that bag until it joins again. `read` and `bags` still work.
+Other bags and the session itself are untouched. A door that holds no name
+in the bag cannot leave it, and is told to read the bag, never to join in
+order to leave. A `leave` on a missing bag creates nothing.
+
+The withdrawal is the door's, not the session's. A shared Claude inbox is
+one door, so a subagent that leaves withdraws its parent and siblings
+from that bag too. Letters already queued to a Codex thread still arrive,
+and a `send` that took the ledger lock first finishes before the leave is
+recorded. Once it is recorded, later lookups refuse until a `join`
+restores a binding. A `join` after a leave is deliberate: a refusal that
+follows a leave names the leave, so an old queued letter cannot talk a
+departed door back in by accident. `leave` never deletes the bag or its
+history. Over MCP it is `postbag_leave` with the bag alone, and the name
+is derived from the door, never passed.
+
+A `leave` record is a new kind. Readers older than 2.1 refuse a ledger
+that holds one as not a record, and that is deliberate: a reader that
+skipped a record it did not understand could keep a withdrawn binding and
+deliver a letter wrongly. A bag written by 2.0 reads unchanged in 2.1.
+Once a bag holds a leave, every reader of that bag must be 2.1 or later,
+and a downgrade for that bag is unsupported. Deleting leave rows is not a
+repair.
 
 ## Names
 
@@ -197,8 +216,9 @@ reserved for doors of that vendor, and a same-vendor pair needs distinct
 names, since both defaults would take the same one. A door has one name and
 a name has one door. The last `join` wins both ways, and `join` says what it
 renamed or took. A name is an address, not authentication. A send to a name
-nobody holds refuses and points to `read`. If the last door to hold that
-name still holds another, the refusal says so. A door whose name was taken
+nobody holds refuses and points to `read`, describing the latest
+transition of that name: that it was left at a time, or that its last door
+now holds another name. A door whose name was taken
 learns it at its next `send`, which refuses. A reply command names a name,
 not a door: it reaches whoever holds the name when it runs. Names print
 with `@`, and `send` accepts them with or without it. A bag name follows
@@ -213,7 +233,6 @@ printable characters.
 | a session's name | a peer's name |
 | a message | a letter |
 | `ListAgents` | no equivalent. `read` and `bags` show registered names, not live agents |
-| a session ending | `leave`, which releases the name and nothing else |
 
 ## Envelope, verbatim
 
