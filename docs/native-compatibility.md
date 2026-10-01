@@ -38,8 +38,8 @@ prove that all conversations stop. Leave did not test recall of queued
 letters, which remains unsupported.
 
 The sender reported a read-only command sandbox, disabled network access
-and `approvalPolicy: never`. Claude used manual permissions and reported
-`permissionMode: default`, with no permission prompt. The harness left
+and `approvalPolicy: never`. Claude was launched with `--permission-mode manual`
+and reported `permissionMode: default`, with no permission prompt. The harness left
 `crossSessionInbound` unset and used empty Claude setting sources. Native
 own-child classification was unobserved. The harness changed no personal
 configuration or installation. Claude used its existing login and could
