@@ -4,7 +4,13 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.0] - 2026-10-01
+
+Leaving a bag is now a recorded withdrawal of the caller's name. MCP
+inventory also reports the installed worker version. Upgrade both peers,
+including their CLI and MCP installations, and reconnect each MCP server.
+Bags containing a leave record require 2.1 readers. Older bags remain
+unchanged and need no migration.
 
 ### Added
 - CLI `leave` and MCP `postbag_leave` withdraw the caller's current name
@@ -356,7 +362,8 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/parasxos/postbag/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/parasxos/postbag/releases/tag/v2.1.0
 [2.0.0]: https://github.com/parasxos/postbag/releases/tag/v2.0.0
 [1.4.0]: https://github.com/parasxos/postbag/releases/tag/v1.4.0
 [1.3.0]: https://github.com/parasxos/postbag/releases/tag/v1.3.0
