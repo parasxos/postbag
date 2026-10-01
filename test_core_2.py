@@ -506,3 +506,46 @@ def test_inventory_rows_and_counts_shape(bag, be, tmp_path, monkeypatch):
     assert counts == {"letters": 1, "empty": 1, "unavailable": 1}
     assert resumptions == {"default": [("ada", None)], "quiet": []}
     assert len(problems) == 1 and "broken" in problems[0]
+
+
+# records() descriptor ownership -----------------------------------------------
+
+@pytest.mark.parametrize("stage", ["fstat", "fdopen"])
+def test_records_closes_its_descriptor_when_fstat_or_fdopen_fails(joined, monkeypatch, stage):
+    """A failure between os.open and the file object must not leak the descriptor."""
+    before = joined.ledger_path().read_bytes()
+    opened, closed = [], []
+    real_open, real_close = os.open, os.close
+    real_fstat, real_fdopen = os.fstat, os.fdopen
+
+    def tracking_open(path, *args, **kwargs):
+        fd = real_open(path, *args, **kwargs)
+        if str(path) == str(joined.ledger_path()):
+            opened.append(fd)
+        return fd
+
+    def tracking_close(fd):
+        if fd in opened:
+            closed.append(fd)
+        return real_close(fd)
+
+    def failing(fd, *args, **kwargs):
+        if fd in opened and fd not in closed:
+            raise OSError(errno.EIO, "injected")
+        return (real_fstat if stage == "fstat" else real_fdopen)(fd, *args, **kwargs)
+
+    monkeypatch.setattr(joined.os, "open", tracking_open)
+    monkeypatch.setattr(joined.os, "close", tracking_close)
+    monkeypatch.setattr(joined.os, "fstat" if stage == "fstat" else "fdopen", failing)
+    with pytest.raises(OSError) as raised:
+        joined.records()
+    assert raised.value.errno == errno.EIO
+    assert opened and closed == opened, (opened, closed)
+    for fd in opened:
+        with pytest.raises(OSError) as exc:
+            fcntl.fcntl(fd, fcntl.F_GETFD)
+        assert exc.value.errno == errno.EBADF
+    for name, real in (("open", real_open), ("close", real_close), ("fstat", real_fstat), ("fdopen", real_fdopen)):
+        monkeypatch.setattr(joined.os, name, real)
+    assert joined.ledger_path().read_bytes() == before
+    assert joined.Snapshot(joined.records()).letters == 0  # a later read works

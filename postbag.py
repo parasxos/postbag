@@ -223,10 +223,16 @@ def records(*, wait=True, refuse_missing=True):
             bag().absent("read")
         except OSError as e:
             fail(f"cannot open the ledger ({e})")
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
+        try:  # the raw descriptor is owned here until the file object takes it
+            regular = stat.S_ISREG(os.fstat(fd).st_mode)
+            f = os.fdopen(fd, encoding="utf-8") if regular else None
+        except BaseException:
+            os.close(fd)
+            raise
+        if f is None:
             os.close(fd)
             fail(f"the ledger is not a regular file ({path})")
-        with os.fdopen(fd, encoding="utf-8") as f:
+        with f:
             fcntl.flock(f, fcntl.LOCK_SH | (0 if wait else fcntl.LOCK_NB))
             text = f.read()
     if text and not text.endswith("\n"):

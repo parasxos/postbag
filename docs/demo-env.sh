@@ -4,7 +4,7 @@
 # Nothing here touches a real session or your own bags: HOME is a temporary
 # directory, so the default bag lives there, and each Claude door is a
 # throwaway socket that accepts a connection and drops it.
-unset CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CODEX_SESSION_ID POSTBAG_LEDGER
+unset CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID CODEX_THREAD_ID POSTBAG_LEDGER
 PS1='$ '
 PATH="$PWD:$PATH"   # run the checkout being documented
 DEMO=$(mktemp -d)
