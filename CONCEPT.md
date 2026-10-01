@@ -31,8 +31,14 @@ hosts that run them, not by postbag.
 Every verb takes an optional `--bag NAME` before it. `join` creates any
 bag that does not exist, default, named or path alike. `send` and `read`
 on a missing bag create nothing, not even a directory, and refuse: `send`
-points the caller to `join`, `read` points to `bags`. A `join` that is
-refused creates nothing either. `join` is the creating verb because it is
+points the caller to `join`, `read` points to `bags`. A `join` refused
+for its arguments or its identity creates nothing. Once creation has
+begun, an I/O failure or a crash can leave a directory or an empty or
+partial file behind, and postbag never deletes or truncates on failure,
+since another process may already hold the file open. A ledger that
+already exists is never re-moded: if it grants group or other access, or
+lacks owner read and write, every mutation refuses before parsing,
+knocking or appending. `join` is the creating verb because it is
 the first write in practice: a `send` needs a name that the sender's door
 holds in that bag, and a bag with no join holds none. A mistyped `--bag`
 on `join` therefore leaves a bag with one join and no letters. `bags`
