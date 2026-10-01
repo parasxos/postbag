@@ -1,7 +1,7 @@
 include postbag
 include CONCEPT.md CHANGELOG.md .github/SECURITY.md .github/CONTRIBUTING.md
 recursive-include tests test_*.py
-include docs/demo.tape docs/demo-env.sh docs/readme-research.md
+include docs/demo.tape docs/demo_mcp.py docs/readme-research.md
 include docs/native-compatibility.md
 include docs/mcp.md
 include server.json llms-install.md

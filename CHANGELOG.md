@@ -4,6 +4,23 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] - 2026-10-01
+
+Documentation and repository layout release. No runtime change beyond the
+version number.
+
+### Changed
+- The README is a short product page: install and connect for both hosts,
+  the two-prompt setup, the five tools, and what to know before use. Release
+  evidence and migration notes stay in this file, `docs/mcp.md` and
+  `docs/native-compatibility.md`.
+- The demo shows scripted calls to two real `postbag mcp` servers, one with
+  a Codex identity and one with a Claude Code identity, through fake native
+  doors, including the envelope each door receives. Its source is
+  `docs/demo_mcp.py`. The CLI demo environment script is removed.
+- Tests live in `tests/`. CI, the installed-wheel check and the source
+  distribution follow the new paths.
+
 ## [2.2.0] - 2026-10-01
 
 The new `postbag mcp` launcher lets MCP installers run Postbag by its
@@ -386,7 +403,8 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/parasxos/postbag/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/parasxos/postbag/releases/tag/v2.2.1
 [2.2.0]: https://github.com/parasxos/postbag/releases/tag/v2.2.0
 [2.1.0]: https://github.com/parasxos/postbag/releases/tag/v2.1.0
 [2.0.0]: https://github.com/parasxos/postbag/releases/tag/v2.0.0

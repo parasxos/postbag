@@ -55,14 +55,14 @@ installation. The MCP extra and command select the same version:
 ```toml
 [mcp_servers.postbag]
 command = "/absolute/path/to/uvx"
-args = ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+args = ["--with", "postbag[mcp]==2.2.1", "postbag@2.2.1", "mcp"]
 tool_timeout_sec = 60
 ```
 
 For Claude Code:
 
 ```sh
-claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/uvx --with 'postbag[mcp]==2.2.0' postbag@2.2.0 mcp
+claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/uvx --with 'postbag[mcp]==2.2.1' postbag@2.2.1 mcp
 ```
 
 Generic stdio configuration uses the same command and arguments:
@@ -72,7 +72,7 @@ Generic stdio configuration uses the same command and arguments:
   "mcpServers": {
     "postbag": {
       "command": "/absolute/path/to/uvx",
-      "args": ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+      "args": ["--with", "postbag[mcp]==2.2.1", "postbag@2.2.1", "mcp"]
     }
   }
 }
