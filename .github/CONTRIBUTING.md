@@ -12,13 +12,14 @@ has to name the capability the existing nouns cannot provide.
 git clone https://github.com/parasxos/postbag.git
 cd postbag
 python3 -m venv .venv && source .venv/bin/activate
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,mcp]"
 python -m pytest -q
 ```
 
 Tests isolate the default and named-bag directories as well as
 `POSTBAG_LEDGER`, and use fake doors. They must never scan the user's bags
-or reach a real session. Keep them fast and stdlib-only.
+or reach a real session. Core tests use the standard library and pytest.
+MCP wire tests require the optional `mcp` extra and skip without it.
 
 ## Change
 

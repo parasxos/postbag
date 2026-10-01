@@ -88,8 +88,9 @@ The optional local MCP interface exposes `join`, `send`, `read`, and `bags`
 as tools. The host starts its stdio process. Each tool uses an isolated
 worker and the same ledger and native transport as the CLI. Identity comes
 from host metadata or inherited inbox fields, never model arguments.
-Only named bags are exposed, and opening an exchange remains a human CLI
-operation. See [MCP setup and outcomes](docs/mcp.md).
+The default bag and named bags are exposed, without filesystem path arguments.
+Joining can create the default ledger, but opening an exchange remains a human
+CLI operation. See [MCP setup and outcomes](docs/mcp.md).
 
 1. **The sender is the door, not a flag.** `send` runs inside a session,
    and that session joined as one door. The letter is from that door.
@@ -102,10 +103,11 @@ operation. See [MCP setup and outcomes](docs/mcp.md).
 3. **The letter teaches its reader how to answer.** Each delivered
    letter begins with its number in the exchange, its sender and its
    recipient, and the shared budget. Then comes the body. A non-final
-   letter ends with the one command that replies, and that command names
-   the bag. The final letter carries
-   no command and says instead not to send a reply. Neither agent needs
-   prior instruction.
+   letter ends with the way to reply: in a named or default bag, the
+   Postbag MCP send tool for a reader that has it, and in every bag the
+   one shell command that replies. Both name the bag and the sender. The
+   final letter carries neither and says instead not to send a reply.
+   Neither agent needs prior instruction.
 4. **The ledger is the truth.** The ledger records completed sends: a
    letter is in it iff it was delivered and then recorded. Delivered means
    submitted through the door, the socket write returned or `codex queue`
@@ -166,7 +168,8 @@ Letter 4 of 12 from @ada to @bob via postbag (exchange 3, bag acceptance).
 
 <body>
 
-If it needs an answer, reply with:
+If it needs an answer and you have Postbag MCP tools, call postbag_send with bag acceptance and to @ada.
+Otherwise reply with:
 postbag --bag acceptance send @ada - <<'POSTBAG'
 <your reply>
 POSTBAG

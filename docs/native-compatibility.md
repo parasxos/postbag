@@ -1,5 +1,36 @@
 # Native compatibility checks
 
+## 1 October 2026: installed 1.4.0 release candidate
+
+The clean wheel built from the release branch at `1bd4654` plus the version
+bump passed the native release gate on macOS 27.0.1 with Python 3.14.6 and
+MCP SDK 2.2.0, installed into a fresh virtual environment outside any
+checkout. `postbag --version` and `postbag-mcp --version` both read `1.4.0`.
+
+The decisive run was a cross-vendor CLI exchange between two live personal
+sessions in bag `accept14`, opened by the human with a budget of 200. The
+sender was **Claude Code 2.1.286** in bypass-permissions mode, running the
+candidate CLI from its shell. The recipient was the desktop Codex
+app-server, **codex-cli 0.158.0-alpha.2.1** (ChatGPT 26.924.22138, build
+11645), reached through `/opt/homebrew/bin/codex` **0.157.1** as the queue
+command, because the shell had no `POSTBAG_CODEX` and the former app-bundle
+path no longer exists. This was the first live use of the filtered
+subprocess environment: the queue command received none of the sender's
+inbox, session or ledger variables.
+
+| Check | Observed result |
+|---|---|
+| Claude to Codex | Candidate CLI `join claude` then `send codex` returned "delivered". The letter arrived in the existing Codex chat as an ordinary user-role turn and started a response. No approval was requested on the Codex side. |
+| Codex to Claude | Codex replied through its installed 1.3.0 CLI, since its chat exposed no MCP tools. The reply arrived in the Claude session as a user turn with no approval prompt. |
+| Exhaustion | The candidate CLI `send` in the spent bag `postbag-2046` returned "the exchange's letters are spent; stop and ask the human", exit 1, with the ledger byte-identical. |
+| Ledger | Two letters in opposite directions in `accept14`, 198 remaining, both recorded under the names `claude` and `codex`. |
+
+Native own-child classification was not observed. The sessions were the
+user's personal running sessions, not isolated fixtures, and no recipient
+policy was changed to make delivery pass. The MCP interface of the
+candidate was exercised only by the automated wire suite in this run.
+Both personal MCP servers still ran 1.3.0 during the exchange.
+
 ## 30 September 2026: installed 1.3.0 release candidate
 
 The clean wheel built from `878a4a6` passed the native release gate on
@@ -61,7 +92,8 @@ with the MCP extra passed **48 wire tests** outside the checkout. Wheel and
 source archive metadata and fresh base installations passed. An actual
 published 1.2.1 installation read a fixture ledger containing 1.3.0 MCP joins
 and letters without modification, retaining the correct exhausted budget.
-All 11 candidate CI jobs passed on macOS/Linux and Python 3.10 through 3.14.
+All 11 candidate CI jobs passed. Core jobs ran on macOS/Linux with Python
+3.10, 3.12 and 3.14. MCP jobs ran on both systems with Python 3.10 and 3.14.
 [Candidate CI](https://github.com/parasxos/postbag/actions/runs/36721883077).
 
 Remaining limits: live Claude `/clear` was not exercised; native Linux

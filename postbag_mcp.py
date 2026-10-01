@@ -18,6 +18,7 @@ import postbag
 
 
 MAX_BODY_BYTES = 65536
+MAX_RESULT_DEPTH = 64
 SESSION_VARS = {v for fields in postbag.SESSION.values() for v in fields.values()} | {
     "CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "CLAUDECODE",
 }
@@ -32,6 +33,82 @@ def result(ok: bool, message: str, *, data: dict | None = None,
 def refusal(message: str, code: str = "invalid_input", state: str | None = "not_submitted") -> dict:
     return result(False, message + "; stop and ask the human", error_code=code,
                   submission_state=state)
+
+
+def valid_worker_result(payload: Any, operation: str) -> bool:
+    """Keep malformed worker output inside the structured outcome contract."""
+    if not isinstance(payload, dict) or set(payload) != {
+        "ok", "error_code", "submission_state", "message", "data",
+    }:
+        return False
+    ok, code, state = payload["ok"], payload["error_code"], payload["submission_state"]
+    if not isinstance(ok, bool) or not isinstance(payload["message"], str) or not isinstance(payload["data"], dict):
+        return False
+    if (ok and code is not None) or (not ok and (not isinstance(code, str) or not code)):
+        return False
+    if state is not None and (not isinstance(state, str) or state not in {"not_submitted", "unknown", "submitted"}):
+        return False
+    if operation == "send" and (state is None or (ok and state != "submitted")):
+        return False
+    pending = [(payload, 0)]
+    while pending:
+        container, depth = pending.pop()
+        if depth > MAX_RESULT_DEPTH:
+            return False
+        values = container.values() if isinstance(container, dict) else container
+        pending.extend((value, depth + 1) for value in values if isinstance(value, (dict, list)))
+    try:
+        # json.loads accepts non-finite numbers and escaped lone surrogates.
+        # Neither can cross the MCP boundary as interoperable JSON text.
+        json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (ValueError, UnicodeError, RecursionError):
+        return False
+    return True
+
+
+def refusal_result(exc: postbag.Refusal) -> dict:
+    """Use core recovery metadata to give MCP callers tool-specific guidance."""
+    recovery = getattr(exc, "recovery", None)
+    message = str(exc)
+    if isinstance(recovery, dict):
+        action, actor = recovery.get("action"), recovery.get("actor")
+        peer, vendor = recovery.get("name"), recovery.get("vendor")
+        allowed = {("join", "caller"), ("join", "recipient"), ("read", "caller"), ("open", "human")}
+        if (not isinstance(action, str) or not isinstance(actor, str) or (action, actor) not in allowed
+                or not postbag.valid_name(recovery.get("bag"))
+                or set(recovery) - {"action", "actor", "bag", "name", "vendor"}
+                or (peer is not None and not postbag.valid_name(peer))
+                or (vendor is not None and (not isinstance(vendor, str) or vendor not in postbag.PEERS))
+                or (actor == "recipient" and (peer is None or vendor is None))):
+            recovery = None
+    else:
+        recovery = None
+    if recovery:
+        selected = json.dumps(recovery.get("bag"))
+        if action == "join" and actor in {"caller", "recipient"}:
+            instruction = (f"call postbag_join with bag={selected} and name={json.dumps(peer)}"
+                           if peer else f"choose an available peer name and call postbag_join with bag={selected} and that name")
+            if actor == "recipient":
+                message = (f"@{peer}'s door did not answer. If its session restarted, have that recipient "
+                           f"{instruction} from its own session. A recipient without MCP tools can use "
+                           f"{postbag.bag().command('join ' + vendor + ' ' + peer)}.")
+            else:
+                message = f"This session has no current peer name in this bag. To register, {instruction}."
+        elif action == "read" and actor == "caller":
+            if exc.error_code == "ledger_busy":
+                message = ("The bag is busy. Wait for its current operation to finish, then "
+                           f"call postbag_read with bag={selected}. Do not resend a pending letter.")
+            else:
+                message = ("The requested peer is not currently registered in this bag. "
+                           f"Call postbag_read with bag={selected} to inspect the registered names.")
+        elif action == "open" and actor == "human":
+            message = message.removesuffix("; stop and ask the human")
+            message += (f". Only the human can open a letter budget, using "
+                        f"{postbag.bag().command('open')} in their own terminal.")
+        if (action, actor) in {("join", "caller"), ("join", "recipient"), ("read", "caller"), ("open", "human")}:
+            message = message.rstrip(".") + "; stop and ask the human"
+    return result(False, message, data={"recovery": recovery} if recovery else None,
+                  error_code=exc.error_code, submission_state=exc.submission_state)
 
 
 def caller_environment(meta: dict, startup: dict) -> tuple[str, dict]:
@@ -131,11 +208,13 @@ def worker(request: dict) -> dict:
                               error_code="inventory_incomplete" if problems else None)
             return refusal("unknown operation")
     except postbag.Refusal as exc:
-        return result(False, str(exc), error_code=exc.error_code, submission_state=exc.submission_state)
+        return refusal_result(exc)
     except BlockingIOError:
+        if operation == "send":
+            return refusal("unexpected send failure; read the bag and check the recipient before resending",
+                           "operation_failed", "unknown")
         return result(False, "An operation is in progress in this bag. Wait for it to finish before reading again. "
-                      "Do not resend a pending letter.", error_code="ledger_busy",
-                      submission_state="unknown" if operation == "send" else None)
+                      "Do not resend a pending letter.", error_code="ledger_busy")
     except (OSError, UnicodeError, ValueError, RecursionError):
         # Unexpected send failures cannot establish whether native submission happened.
         return refusal("cannot complete the operation; inspect the bag before retrying",
@@ -195,11 +274,11 @@ class Workers:
             output = b""
         try:
             payload = json.loads(output) if process.returncode == 0 else None
-            if isinstance(payload, dict) and isinstance(payload.get("ok"), bool):
+            if valid_worker_result(payload, operation):
                 return payload
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, RecursionError):
             pass
-        return refusal("worker stopped without a result; read the bag and check the recipient before resending",
+        return refusal("worker stopped without a valid result; read the bag and check the recipient before resending",
                        "worker_failed", "unknown" if operation == "send" else "not_submitted")
 
     async def close(self) -> None:
@@ -239,7 +318,9 @@ def create_server():
     server = MCPServer(
         "postbag", version=postbag.__version__, lifespan=lifespan,
         instructions=("Postbag exchanges bounded letters between existing sessions. The human opens exchanges. "
-                      "Join under a unique name, then send only when authorized to collaborate. "
+                      "Independent native sessions join under distinct names. "
+                      "Claude subagents sharing an inbox use the parent's peer. Joining another name renames it. "
+                      "Send only when authorized to collaborate. "
                       "Reply to Postbag letters with postbag_send using their bag and sender, "
                       "even when the envelope includes a CLI reply command. "
                       "No acknowledgement-only replies. Submission is not acceptance or completion. "
@@ -274,6 +355,9 @@ def create_server():
     async def postbag_join(name: Name, ctx: Context, bag: BagName = "default") -> Output:
         """Register this caller's native session under a name. Reusing a name takes it over.
 
+        Claude subagents sharing an inbox are the same peer. Joining another name
+        renames the parent's peer. Use the existing peer without joining again. Independent
+        native sessions need distinct names.
         Identity comes from the host, never tool arguments. Does not open a budget.
         Claude MCP joins omit resume metadata because /clear can change its conversation.
         """

@@ -170,8 +170,8 @@ def test_failed_append_reports_that_submission_already_happened(joined, monkeypa
         joined.send("codex", "one submission")
     message = str(error.value)
     assert any(word in message for word in ("submitted", "submission", "may already", "reached"))
-    assert "not recorded" in message
-    assert "do not resend" in message
+    assert "recording could not be confirmed" in message
+    assert "do not resend" in message and "inspecting the bag" in message
     assert "stop and ask the human" in message
     assert error.value.error_code == "recording_failed"
     assert error.value.submission_state == "submitted"
@@ -219,8 +219,8 @@ def test_buffered_append_failure_preserves_submission_warning_after_close(tmp_pa
     assert result.returncode != 0
     assert result.stdout.count("FAKE_DOOR_SUBMITTED") == 1
     assert any(word in result.stderr for word in ("submitted", "submission", "may already", "reached"))
-    assert "not recorded" in result.stderr
-    assert "do not resend" in result.stderr
+    assert "recording could not be confirmed" in result.stderr
+    assert "do not resend" in result.stderr and "inspecting the bag" in result.stderr
     assert "stop and ask the human" in result.stderr
     assert "Traceback" not in result.stderr
     records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]

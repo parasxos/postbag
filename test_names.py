@@ -12,6 +12,7 @@ def session(bag, monkeypatch):
     """Select a wholly fake vendor session, clearing both inherited identities."""
     def select(vendor=None, identity="one", **changes):
         monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)  # never record the running session's real ID
         for fields in bag.SESSION.values():
             for variable in fields.values():
                 monkeypatch.delenv(variable, raising=False)

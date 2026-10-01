@@ -190,7 +190,9 @@ def test_scoped_reply_survives_recipient_environment_and_final_letter_names_bag(
     calls = rows(cli.capture)
     envelope = calls[0][-1]
     assert envelope.startswith(f"Letter 1 of 2 from @ada to @bob via postbag (exchange 1, bag {display}).\n")
-    assert f"\n\n{body}\n\nIf it needs an answer, reply with:\n" in envelope
+    reply = (f"If it needs an answer and you have Postbag MCP tools, call postbag_send with bag {display} and to @ada.\n"
+             "Otherwise reply with:\n" if display in ("default", "acceptance") else "If it needs an answer, reply with:\n")
+    assert f"\n\n{body}\n\n{reply}" in envelope
     command = f"postbag --bag {command_selector(display)} send @ada -"
     assert command + " <<'POSTBAG'\n" in envelope
     reply_argv = shlex.split(next(line for line in envelope.splitlines() if line.startswith("postbag ")).split(" <<", 1)[0])

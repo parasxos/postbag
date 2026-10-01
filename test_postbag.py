@@ -37,6 +37,7 @@ def be(monkeypatch):
     """be("claude") puts the shell inside that session; be(None) makes it a human's terminal."""
     def _be(peer):
         monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)  # never record the running session's real ID
         for env in VARS.values():
             for var in env:
                 monkeypatch.delenv(var, raising=False)
@@ -330,8 +331,8 @@ def test_append_failure_after_the_knock_warns_against_resending(joined, monkeypa
             yield w
 
     monkeypatch.setattr(joined, "ledger", broken)
-    with pytest.raises(SystemExit, match="was submitted to @codex's door but not recorded .disk full., "
-                                          "do not resend before checking @codex's session"):
+    with pytest.raises(SystemExit, match="was submitted to @codex's door but its recording could not be confirmed "
+                                          ".disk full., do not resend before inspecting the bag and @codex's session"):
         joined.send("codex", "x")
     assert len(joined.KNOCKED) == 1
 

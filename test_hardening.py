@@ -35,6 +35,12 @@ def cli(tmp_path):
     }
     ledger = tmp_path / "state" / "ledger.jsonl"
     base["POSTBAG_LEDGER"] = str(ledger)
+    # A codex-bound send that forgets fake_codex must refuse, never launch the desktop binary.
+    base["POSTBAG_CODEX"] = str(tmp_path / "no-such-codex")
+    # bags always scans HOME/.postbag, so HOME must never be the developer's own.
+    home = tmp_path / "home"
+    home.mkdir()
+    base["HOME"] = str(home)
 
     def environment(peer=None, extra=None):
         return {**base, **SESSION_VARS.get(peer, {}), **(extra or {})}

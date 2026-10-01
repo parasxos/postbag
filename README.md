@@ -8,10 +8,10 @@ ledger, and counts it against a letter budget that only you can set.
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
 
-![postbag demo: two Claude Code sessions join as ada and bob, you open an exchange of four letters, ada asks bob for a review, bob answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.3.0/docs/assets/demo.gif)
+![postbag demo: two Claude Code sessions join as ada and bob, you open an exchange of four letters, ada asks bob for a review, bob answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.4.0/docs/assets/demo.gif)
 
 *Real commands, real output, fake doors: a temporary home and two throwaway
-sockets, so no session or token is shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.3.0/docs/demo.tape).*
+sockets, so no session or token is shown. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.4.0/docs/demo.tape).*
 
 Use it for a review of the other agent's diff, to split a task and agree
 the interface by letter, or for a second opinion. Text travels by postbag,
@@ -50,7 +50,7 @@ pipx install 'postbag[mcp]'
 ```
 
 Register the absolute path to `postbag-mcp` as a local stdio MCP
-server in each host. [Setup, upgrades, and compatibility](https://github.com/parasxos/postbag/blob/v1.3.0/docs/mcp.md).
+server in each host. [Setup, upgrades, and compatibility](https://github.com/parasxos/postbag/blob/v1.4.0/docs/mcp.md).
 The MCP SDK is required only for this interface.
 
 Native delivery has been checked on macOS with Claude Code 2.1.285 and
@@ -73,8 +73,8 @@ Linux passes CI, but live delivery is unverified there. Windows is unsupported.
 
    If accepted, bob receives: "Letter 1 of 6 from @ada to @bob via postbag
    (exchange 1, bag default)", how many letters are left, the body, and the
-   one command that answers, `postbag --bag default send @ada -` with the
-   reply on stdin. Neither agent needs instructions. The last letter says
+   reply instructions: use `postbag_send` if MCP tools are available, or
+   `postbag --bag default send @ada -` with the reply on stdin. The last letter says
    "do not send a reply", and the next `send` refuses and says stop.
 4. Read the bag from anywhere with `postbag --bag default read`. Its first
    line names the bag, its names and the open exchange, then the records.
@@ -120,7 +120,19 @@ budget is shared by everyone in the bag. Two sessions are the supported use,
 three or more is experimental. A bag is one ledger, the only state. No delivery daemon,
 polling, hooks, or bag index. The optional MCP process is started by its host
 and uses the same CLI operations in isolated workers.
-[CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.3.0/CONCEPT.md) is the whole specification in a page.
+[CONCEPT.md](https://github.com/parasxos/postbag/blob/v1.4.0/CONCEPT.md) is the whole specification in a page.
+
+## Tests
+
+For a full development test run, install both test dependencies and the MCP extra:
+
+```sh
+python -m pip install -e '.[dev,mcp]'
+python -m pytest -q
+```
+
+Without the `mcp` extra, the wire tests are skipped. Tests use private fixtures
+and fake native doors. See [Contributing](.github/CONTRIBUTING.md).
 
 ## Security and limits
 
@@ -143,4 +155,4 @@ and uses the same CLI operations in isolated workers.
   leave submission uncertain. Check both the bag and the recipient before
   sending again; an absent ledger record is not proof of failed delivery.
 
-postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v1.3.0/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v1.3.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.3.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v1.3.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.3.0/LICENSE)
+postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v1.4.0/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v1.4.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/security/policy) · [Changelog](https://github.com/parasxos/postbag/blob/v1.4.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v1.4.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v1.4.0/LICENSE)
