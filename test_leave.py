@@ -10,7 +10,7 @@ import postbag
 from test_core_2 import selections
 from test_hardening import SCRIPT, cli, fake_codex, prepare_pair, rows  # noqa: F401 -- subprocess fixture with a private ledger
 from test_names import session  # noqa: F401
-from test_postbag import bag, be, joined, expected_bag_command, expected_bag_label  # noqa: F401
+from test_postbag import VARS, bag, be, joined, expected_bag_command, expected_bag_label  # noqa: F401
 
 
 def refusal(operation):
@@ -529,3 +529,106 @@ def test_leave_help_is_not_a_refusal_and_the_verb_is_listed(cli):
     assert result.returncode == 0 and "withdraw" in result.stdout and "stop and ask" not in result.stdout
     assert "leave" in cli("--help").stdout
     assert not cli.ledger.exists()
+
+
+# ordering under the real lock, mode before parse, uuid case -------------------
+
+def _door(peer):
+    for variables in VARS.values():
+        for name in variables:
+            os.environ.pop(name, None)
+    os.environ.update(VARS[peer])
+
+
+@pytest.mark.parametrize("first", ["send", "leave"])
+def test_two_processes_order_send_and_leave_under_the_real_lock(joined, first):
+    """A send that holds the lock first records its letter before the leave lands.
+    A leave that holds it first makes the waiting send refuse with zero knocks."""
+    import multiprocessing
+    ctx = multiprocessing.get_context("fork")
+    held, release, waiting, done, knocks = ctx.Event(), ctx.Event(), ctx.Event(), ctx.Event(), ctx.Value("i", 0)
+    results = ctx.Queue()
+
+    def run(which, leads):
+        _door("claude" if which == "send" else "codex")
+        real_flock = postbag.fcntl.flock
+        if not leads:
+            def noticing_flock(f, flags):
+                if flags & fcntl.LOCK_EX:
+                    waiting.set()
+                return real_flock(f, flags)
+            postbag.fcntl.flock = noticing_flock
+
+        def knock(*_):
+            with knocks.get_lock():
+                knocks.value += 1
+            if leads:
+                held.set()
+                assert release.wait(5)
+        postbag.KNOCK = {vendor: knock for vendor in postbag.PEERS}
+        if which == "leave" and leads:
+            real_fsync = postbag.os.fsync
+
+            def slow_fsync(fd):
+                held.set()
+                assert release.wait(5)
+                return real_fsync(fd)
+            postbag.os.fsync = slow_fsync
+        try:
+            outcome = postbag.send("codex", "ordered") if which == "send" else postbag.leave()
+            results.put((which, "ok", outcome))
+        except postbag.Refusal as error:
+            results.put((which, "refused", str(error)))
+        finally:
+            if not leads:
+                done.set()
+
+    second = "leave" if first == "send" else "send"
+    leader = ctx.Process(target=run, args=(first, True))
+    follower = ctx.Process(target=run, args=(second, False))
+    try:
+        leader.start()
+        assert held.wait(5), "the first operation never took the lock"
+        follower.start()
+        assert waiting.wait(5), "the second operation never asked for the lock"
+        assert not done.wait(0.2), "the second operation finished while the first held the lock"
+        release.set()
+        for process in (leader, follower):
+            process.join(5)
+            assert process.exitcode == 0
+        got = {item[0]: item for item in (results.get(timeout=2), results.get(timeout=2))}
+    finally:
+        release.set()
+        for process in (leader, follower):
+            if process.is_alive():
+                process.terminate()
+            process.join()
+    if first == "send":
+        assert kinds(joined) == ["join", "join", "letter", "leave"] and knocks.value == 1
+        assert got["send"][1] == "ok" and got["leave"][1] == "ok"
+    else:
+        assert kinds(joined) == ["join", "join", "leave"] and knocks.value == 0
+        assert got["send"][1] == "refused" and "left this bag at" in got["send"][2]
+
+
+@pytest.mark.parametrize("mode", [0o644, 0o400, 0o000])
+def test_leave_refuses_a_bad_mode_before_parsing_and_preserves_it(joined, monkeypatch, mode):
+    path = joined.ledger_path()
+    before = path.read_bytes()
+    path.chmod(mode)
+    monkeypatch.setattr(joined, "records", lambda *a, **k: pytest.fail("parsed the ledger before refusing its mode"))
+    try:
+        refusal(lambda: joined.leave())
+        assert stat.S_IMODE(path.stat().st_mode) == mode
+    finally:
+        path.chmod(0o600)
+    assert path.read_bytes() == before
+
+
+def test_a_mixed_case_uuid_join_is_left_by_its_lowercase_leave(bag):
+    thread = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+    rows = [{"n": 1, "at": "2026-10-01T10:00:00+00:00", "kind": "join", "peer": "ada", "vendor": "codex", "thread": thread},
+            {"n": 2, "at": "2026-10-01T10:00:01+00:00", "kind": "leave", "peer": "ada", "vendor": "codex", "thread": thread.lower()}]
+    for n, rec in enumerate(rows, 1):
+        bag.check(rec, n, bag.ledger_path())
+    assert bag.Snapshot(rows).peers == {}
