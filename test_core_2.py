@@ -561,3 +561,70 @@ def test_a_missing_bag_send_from_a_terminal_names_a_peer_not_the_human(bag, tmp_
     assert "join claude" in text and "join codex" in text
     assert error.recovery["vendor"] is None and error.recovery["action"] == "join"
     assert not (tmp_path / "home" / ".postbag").exists()
+
+
+# the mcp launcher ---------------------------------------------------------------
+
+def _fake_mcp_module(monkeypatch, serve):
+    import types
+    module = types.ModuleType("postbag_mcp")
+    module.serve = serve
+    monkeypatch.setitem(sys.modules, "postbag_mcp", module)
+
+
+def test_postbag_mcp_hands_stdio_to_the_server_and_prints_nothing_first(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    calls = []
+    _fake_mcp_module(monkeypatch, lambda: calls.append("served"))
+    postbag.main(["mcp"])
+    assert calls == ["served"]
+    out = capsys.readouterr()
+    assert out.out == "" and out.err == ""  # stdout belongs to the protocol from the first byte
+    assert not (tmp_path / "home").exists()
+
+
+@pytest.mark.parametrize("argv", [["mcp", "extra"], ["mcp", "--bag", "x"], ["mcp", "--final"]])
+def test_postbag_mcp_refuses_any_argument_before_importing_the_server(tmp_path, monkeypatch, argv):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    _fake_mcp_module(monkeypatch, lambda: pytest.fail("the server started despite an argument"))
+    error = refusal(lambda: postbag.main(argv))
+    assert str(error).endswith("; stop and ask the human")
+    assert not (tmp_path / "home").exists()
+
+
+@pytest.mark.parametrize("selector", ["review", "default", "/tmp/postbag-launcher-never.jsonl"])
+def test_postbag_mcp_refuses_a_bag_selection_before_importing_the_server(tmp_path, monkeypatch, selector):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    _fake_mcp_module(monkeypatch, lambda: pytest.fail("the server started despite --bag"))
+    error = refusal(lambda: postbag.main(["--bag", selector, "mcp"]))
+    assert error.error_code == "invalid_input"
+    assert "mcp takes no bag" in str(error) and str(error).endswith("; stop and ask the human")
+    assert not (tmp_path / "home").exists() and not Path("/tmp/postbag-launcher-never.jsonl").exists()
+
+
+def test_postbag_mcp_without_the_sdk_exits_like_postbag_mcp(tmp_path, monkeypatch, capsys):
+    """The real server module with the SDK blocked: the same exit and hint as postbag-mcp."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for name in [m for m in sys.modules if m == "mcp" or m.startswith("mcp.")] + ["mcp"]:
+        monkeypatch.setitem(sys.modules, name, None)  # every later import of the SDK fails
+    with pytest.raises(SystemExit) as stopped:
+        postbag.main(["mcp"])
+    assert stopped.value.code == 2
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "pip install 'postbag[mcp]'" in out.err
+    assert not (tmp_path / "home").exists()
+
+
+def test_postbag_mcp_with_a_missing_server_module_refuses(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setitem(sys.modules, "postbag_mcp", None)
+    error = refusal(lambda: postbag.main(["mcp"]))
+    assert error.error_code == "invalid_input" and "pip install 'postbag[mcp]'" in str(error)
+
+
+def test_the_cli_lists_mcp_as_a_launcher(cli):
+    result = cli("--help")
+    assert result.returncode == 0
+    assert "postbag mcp" in result.stdout and "the same as postbag-mcp" in result.stdout
+    assert not cli.ledger.exists()

@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-keywords = ["claude-code", "claude", "codex", "agents", "multi-agent", "agent-to-agent", "cli"]
+keywords = ["claude-code", "claude", "codex", "agents", "multi-agent", "agent-to-agent", "cli", "mcp", "mcp-server", "model-context-protocol"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",

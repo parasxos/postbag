@@ -1,35 +1,54 @@
+<!-- mcp-name: io.github.parasxos/postbag -->
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/parasxos/postbag/v2.2.0/docs/assets/logo.png" width="96" height="96" alt="Postbag logo">
+
 # postbag
 
-**Two agents, one bag of letters.** Any two Claude Code or Codex sessions
-on the same machine, of the same vendor or not, write to each other. postbag
-submits each letter through its vendor's native door and records it in one
-ledger. The agents and their hosts decide how many letters to send and when
-to stop.
+**Two agents, one bag of letters.**
+
+Let two existing Claude Code or Codex sessions review each other's work,
+split a task, or exchange a second opinion. They run on the same machine,
+receive letters through their native inboxes and share one recorded history.
 
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
+[![MCP tools](https://img.shields.io/badge/MCP_tools-5-blue)](https://github.com/parasxos/postbag/blob/v2.2.0/docs/mcp.md)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#install)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/parasxos/postbag/blob/v2.2.0/LICENSE)
 
-![Historical 1.x demo: two Claude Code sessions join as ada and bob, a human opens an exchange, ada asks for a review, bob answers, read shows the ledger](https://raw.githubusercontent.com/parasxos/postbag/v1.4.0/docs/assets/demo.gif)
+```sh
+pipx install 'postbag[mcp]'
+```
 
-*Historical 1.x demo with fake doors and a temporary home. Its `open` command
-and letter budget are removed in 2.0. Tape: [docs/demo.tape](https://github.com/parasxos/postbag/blob/v1.4.0/docs/demo.tape).*
+</div>
 
-Use it for a review of the other agent's diff, to split a task and agree
-the interface by letter, or for a second opinion. Text travels by postbag,
-code by git.
+Five MCP tools and a CLI. Postbag adds no delivery daemon, polling, hooks or
+remote relay. It carries text and records submitted letters. The agents and their
+hosts decide when to reply and when to stop. Code and other work products
+stay in your repository.
+
+![Two peers join, exchange a review, mark a letter final, leave and read the bag](https://raw.githubusercontent.com/parasxos/postbag/v2.2.0/docs/assets/demo.gif)
+
+*Real CLI commands with fake inboxes and a temporary home. This is a local
+demonstration, not a recording of live agents.
+[Demo source](https://github.com/parasxos/postbag/blob/v2.2.0/docs/demo.tape).*
+
+See [agent installation instructions](https://github.com/parasxos/postbag/blob/v2.2.0/llms-install.md).
 
 ## Install
 
 ```sh
-pipx install postbag
+pipx install 'postbag[mcp]'
 postbag --version
+postbag-mcp --version
 ```
 
-Python 3.10 or later. The CLI uses only the standard library. Both sessions run the same
-postbag, since every command inside a letter is written for the version
-that sent it. For 2.0, upgrade every CLI and MCP participant and reconnect
-each MCP server. Existing ledgers need no rewrite. Mixed 1.x and 2.0
-participants are unsupported. See [migration details](https://github.com/parasxos/postbag/blob/v2.1.0/docs/mcp.md#upgrade-existing-sessions).
+Python 3.10 or later, on macOS or Linux. Use `pipx install postbag` for the
+CLI alone, which uses only the standard library. Upgrade both peers' CLI and
+MCP installations together and reconnect their MCP servers. Existing bags
+need no migration. Once a bag contains a leave record, all its readers need
+2.1 or later. See [migration details](https://github.com/parasxos/postbag/blob/v2.2.0/docs/mcp.md#upgrade-existing-sessions).
 
 Each vendor in use brings its own door. A Claude Code session exports
 `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` to the
@@ -52,9 +71,34 @@ Install the optional tools with:
 pipx install 'postbag[mcp]'
 ```
 
+Or let [uv](https://docs.astral.sh/uv/getting-started/installation/) run the
+pinned package in an isolated environment:
+
+```sh
+uvx --with 'postbag[mcp]==2.2.0' postbag@2.2.0 mcp
+```
+
+This starts a stdio MCP server for a host to manage. It waits for protocol
+input, rather than opening an interactive terminal prompt. `postbag mcp`
+and `postbag-mcp` serve the same five tools. The launcher takes no `--bag`
+or operational arguments. Each tool call selects its own bag.
+
 Register the absolute path to `postbag-mcp` as a local stdio MCP
-server in each host. [Setup, upgrades, and compatibility](https://github.com/parasxos/postbag/blob/v2.1.0/docs/mcp.md).
+server in each host. [Setup, upgrades, and compatibility](https://github.com/parasxos/postbag/blob/v2.2.0/docs/mcp.md).
 The MCP SDK is required only for this interface.
+
+The supported peers are existing Claude Code and Codex sessions. A generic
+MCP client can inspect bags, but registering and sending require a supported
+host's native session identity. Install Postbag on the same machine as both
+sessions. A directory's Docker check can inspect the tool catalog without
+providing access to those sessions.
+
+The installed 2.2 candidate `c56d92d` passed native acceptance through
+`postbag mcp` on macOS with Claude Code 2.1.287 and Codex 0.159.2. Five
+letters were observed at their recipients, including replies in both
+directions. Leaving blocked a later send, deliberate rejoining restored
+delivery, and no reply followed a final letter during a 30.0992-second
+observation window. See [launcher evidence and limits](https://github.com/parasxos/postbag/blob/v2.2.0/docs/native-compatibility.md).
 
 The installed 2.0 candidate `8b87b4f` passed native acceptance on macOS with
 Claude Code 2.1.286 and Codex 0.158.0-alpha.2.1. The check observed two-way
@@ -155,7 +199,7 @@ Two sessions are the supported use, three or more is experimental.
 A bag is one ledger, the only state. No delivery daemon,
 polling, hooks, or bag index. The optional MCP process is started by its host
 and uses the same CLI operations in isolated workers.
-[CONCEPT.md](https://github.com/parasxos/postbag/blob/v2.1.0/CONCEPT.md) is the specification.
+[CONCEPT.md](https://github.com/parasxos/postbag/blob/v2.2.0/CONCEPT.md) is the specification.
 
 ## Tests
 
@@ -167,7 +211,7 @@ python -m pytest -q
 ```
 
 Without the `mcp` extra, the wire tests are skipped. Tests use private fixtures
-and fake native doors. See [Contributing](https://github.com/parasxos/postbag/blob/v2.1.0/.github/CONTRIBUTING.md).
+and fake native doors. See [Contributing](https://github.com/parasxos/postbag/blob/v2.2.0/.github/CONTRIBUTING.md).
 
 ## Security and limits
 
@@ -202,4 +246,4 @@ and fake native doors. See [Contributing](https://github.com/parasxos/postbag/bl
   leave submission uncertain. Check both the bag and the recipient before
   sending again. An absent ledger record is not proof of failed delivery.
 
-postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v2.1.0/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v2.1.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/blob/v2.1.0/.github/SECURITY.md) · [Changelog](https://github.com/parasxos/postbag/blob/v2.1.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v2.1.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v2.1.0/LICENSE)
+postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v2.2.0/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v2.2.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/blob/v2.2.0/.github/SECURITY.md) · [Changelog](https://github.com/parasxos/postbag/blob/v2.2.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v2.2.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v2.2.0/LICENSE)

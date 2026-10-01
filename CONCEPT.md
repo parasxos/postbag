@@ -98,7 +98,9 @@ history in a new process, not the current terminal. Ordinary `bags` and
 ## Principles
 
 The optional local MCP interface exposes `join`, `send`, `read`, `bags`
-and `leave` as tools. The host starts its stdio process. Each tool uses an isolated
+and `leave` as tools. The host starts its stdio process, as `postbag-mcp` or as
+`postbag mcp` for hosts that run a package by its own name. The second is a
+launcher, not a ledger verb, and takes no bag and no argument. Each tool uses an isolated
 worker and the same ledger and native transport as the CLI. Identity comes
 from host metadata or inherited inbox fields, never model arguments.
 The default bag and named bags are exposed, without filesystem path arguments.

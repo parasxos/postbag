@@ -1,5 +1,74 @@
 # Native compatibility checks
 
+## 1 October 2026: installed 2.2.0 launcher candidate
+
+A clean wheel from `c56d92d7ec2d4fb79a39b206db2bb0af8615d5be` passed the
+native gate with both hosts configured to run the installed `postbag`
+executable with `mcp` as its argument. The package, core and both console
+entry points reported `2.2.0`. Runtime modules came from the candidate
+venv's `site-packages`, matched the wheel and committed source, and remained
+unchanged throughout the run.
+
+The run used macOS 27.0.1, build 26A434, Python 3.14.6 and MCP SDK 2.2.0.
+Codex CLI **0.159.2** reported model `gpt-6.1-sol`. Claude Code **2.1.287**
+reported `claude-opus-5-5`. The unwrapped `codex queue` used default server
+discovery in a private `CODEX_HOME`, with no `--remote` override. It reached
+a disposable persisted thread. The user's personal running daemon and
+native Linux delivery were not tested.
+
+| Check | Observed result |
+|---|---|
+| Ordinary delivery | The initial letter and reply were observed in both recipient sessions. A later ordinary round trip after rejoining was also observed. |
+| Final letter | Letter 3 requested a reply in its body but carried `final=true`. After recipient receipt and turn completion, 30.0992 seconds elapsed with no recipient send attempt or ledger change. Both hosts stayed alive. |
+| Leave and refusal | The recipient left through its own MCP call at record 6. The next send returned `refused` and `not_submitted`, included the departure time and left the ledger byte-identical. No recipient receipt marker appeared. |
+| Deliberate rejoin | An explicit later harness instruction caused the recipient to join again at record 7. Delivery then resumed. |
+| Accounting | Ten model-authored calls produced three joins, one leave and five submitted letters. One additional send attempt was refused. Nine records and five letter ordinals were contiguous. Only letter 3 was final. |
+| Cleanup | Both clients and the private server exited 0. No forced shutdown was needed. Native endpoints closed, the private authentication alias was removed and no extra correspondence appeared during shutdown. |
+
+Receipt checks correlated exact tool arguments, structured outcomes, ledger
+records and completed recipient turns. Claude's local receipt markers were
+harness instrumentation, not Postbag replies. Submission receipts alone
+were not taken as proof of receipt. The observation window describes this
+run, not a guarantee that every model will obey a final footer. Leave did
+not test recall of letters already queued.
+
+The command sandbox reported read-only access, disabled network access and
+`approvalPolicy: never`. Claude was launched with `--permission-mode manual`
+and reported `permissionMode: default`. The preauthorized fixture tools
+required no human prompt. `crossSessionInbound` was unset with empty Claude
+setting sources. Native own-child classification was unobserved. No personal
+configuration or installation changed. Claude used its existing login and
+could write its usual caches or telemetry.
+
+An earlier attempt was interrupted with the controlling chat turn after
+two ordinary letters and one final letter. It produced no complete gate
+verdict. Its private evidence was retained, its remaining private server
+was stopped and its authentication alias removed. The successful attempt
+used fresh sessions, a new challenge and the same candidate wheel and
+harness. No letter was resent to the old peers.
+
+Separate checks on the same installed wheel verified both console wrappers
+with current and legacy SDK clients, identical five-tool catalogs and empty
+private inventories. Five launcher tests passed outside the checkout.
+The exact source passed **680 tests** with private HOME and
+`ResourceWarning` as an error. All 21 root test files and the registry and
+installation documents were present in the source archive. The wheel's
+README metadata contained the registry ownership marker. Local uvx checks
+also accepted both `postbag@2.2.0` and `postbag==2.2.0`, each with the matching
+MCP extra. Those earlier uvx checks used a copied version-bumped fixture,
+not this final candidate, and do not establish every registry client's
+argument handling.
+
+Candidate provenance:
+
+```text
+wheel          5412f561c00fe53d676eec2d8dc8d4efe86fdd69ad092d56193dc4cac0454110
+sdist          fcb585c4bbff3504cfd9ab8b5f48c28bf05c4c7622bfbb5b0fe37144a32fdab4
+postbag.py     772fe65e00df1d36116f76c5395ac5366638b318e70148bd88a41db3fd329a09
+postbag_mcp.py fe354cca37c92c6ce1e5ceaba71a37f0218542834124b1b31ee7528b7f4113c8
+harness        af2b577d77d7f8fd52423eaf64535ff78154e615931f72200048d7ff2b83f1c0
+```
+
 ## 1 October 2026: installed 2.1.0.dev0 candidate
 
 The clean wheel from `391fed550228b67d3d0a796418e2137865043f16` passed

@@ -448,6 +448,16 @@ def create_server():
     return server
 
 
+def serve() -> None:
+    """Start the stdio server without interpreting the caller's command line."""
+    try:
+        server = create_server()
+    except ImportError:
+        print("Install MCP support with: pip install 'postbag[mcp]'", file=sys.stderr)
+        raise SystemExit(2) from None
+    server.run(transport="stdio")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Postbag local MCP tools over stdio")
     parser.add_argument("--version", action="version", version=f"postbag-mcp {postbag.__version__}")
@@ -471,11 +481,7 @@ def main() -> None:
         # ASCII framing works even when -E ignores a host's UTF-8 overrides.
         sys.stdout.buffer.write(json.dumps(response).encode("ascii") + b"\n")
         return
-    try:
-        server = create_server()
-    except ImportError:
-        parser.exit(2, "Install MCP support with: pip install 'postbag[mcp]'\n")
-    server.run(transport="stdio")
+    serve()
 
 
 if __name__ == "__main__":

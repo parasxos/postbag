@@ -1,6 +1,7 @@
 # Local MCP interface
 
-The optional `postbag-mcp` command exposes five tools over stdio. It uses
+The optional `postbag-mcp` command exposes five tools over stdio. Version 2.2
+also accepts `postbag mcp`, which starts the same server. It uses
 the same ledger and native delivery as the CLI. Joining creates a missing
 bag. Postbag does not start agents, poll recipients, or retry letters.
 Version 2.0 removes letter budgets, exchanges and the `open` command.
@@ -27,6 +28,10 @@ The extra installs MCP Python SDK 2.2 or later within major version 2.
 Installing Postbag without the extra keeps the CLI free of runtime
 dependencies. `postbag-mcp` then explains which extra is missing.
 
+For an installed package, `postbag mcp` is equivalent to `postbag-mcp`.
+It is a server launcher, not a bag operation. Apart from `--help`, it takes
+no arguments and refuses `--bag`. The host selects a bag in each tool call.
+
 Use the absolute executable path in each host's configuration. For Codex:
 
 ```toml
@@ -40,6 +45,55 @@ For Claude Code:
 ```sh
 claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/postbag-mcp
 ```
+
+### Run with uvx
+
+With [uv installed](https://docs.astral.sh/uv/getting-started/installation/),
+the host can download and run a fixed version without a persistent pipx
+installation. The MCP extra and command select the same version:
+
+```toml
+[mcp_servers.postbag]
+command = "/absolute/path/to/uvx"
+args = ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+tool_timeout_sec = 60
+```
+
+For Claude Code:
+
+```sh
+claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/uvx --with 'postbag[mcp]==2.2.0' postbag@2.2.0 mcp
+```
+
+Generic stdio configuration uses the same command and arguments:
+
+```json
+{
+  "mcpServers": {
+    "postbag": {
+      "command": "/absolute/path/to/uvx",
+      "args": ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+    }
+  }
+}
+```
+
+Choose either the installed command or uvx for this server, so the host does
+not load duplicate tool catalogs. uvx needs network access to resolve and
+download packages on first use. Update both version pins together when
+upgrading. It does not install a `postbag` command on the session's shell
+`PATH`. Install the CLI too if a peer will use shell reply commands.
+
+Postbag can initialize and list its tools without a session identity.
+`join`, `leave` and `send` require the supported host to supply the native
+identity. A generic MCP client or a container with no access to the host's
+session doors is not a replacement peer.
+
+The repository's Dockerfile is for directory health checks that initialize
+the server and list its tools. Native delivery from that image is unsupported
+and unverified.
+
+### Session identity and permissions
 
 Restart or reconnect the MCP server after changing its configuration or
 upgrading Postbag. Do not configure session IDs, socket paths, or tokens by
@@ -352,6 +406,18 @@ disconnect, forced shutdown, or lost response must therefore be treated as
 an unknown outcome. Never retry automatically.
 
 ## Verification
+
+The installed 2.2 candidate at `c56d92d` passed the native gate through
+`postbag mcp` in both hosts. Five letters were observed at their recipients.
+Leave blocked a later send, deliberate rejoin restored delivery, and a final
+letter had no reply during a 30.0992-second observation window. Both console
+entry points also passed current and legacy SDK initialization, identical
+five-tool catalog checks, and private empty-bag inventory checks. Five
+installed launcher tests passed outside the source checkout. These checks
+used Python 3.14.6 and MCP SDK 2.2.0. The exact source passed **680 tests**
+with private HOME and `ResourceWarning` as an error. See the provenance, interrupted
+first attempt and native runtime versions in
+[native compatibility](native-compatibility.md).
 
 The `test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
 homes, fake native executables, and private Unix sockets. The frozen 2.1
