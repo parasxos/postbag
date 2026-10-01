@@ -97,8 +97,8 @@ history in a new process, not the current terminal. Ordinary `bags` and
 
 ## Principles
 
-The optional local MCP interface exposes `join`, `send`, `read`, and `bags`
-as tools. The host starts its stdio process. Each tool uses an isolated
+The optional local MCP interface exposes `join`, `send`, `read`, `bags`
+and `leave` as tools. The host starts its stdio process. Each tool uses an isolated
 worker and the same ledger and native transport as the CLI. Identity comes
 from host metadata or inherited inbox fields, never model arguments.
 The default bag and named bags are exposed, without filesystem path arguments.
@@ -137,14 +137,14 @@ Joining creates a bag from either interface. See
    separate steps. A crash between them leaves a submitted letter
    unrecorded. The next letter may carry the same number. Doors and names
    are read from the ledger, never from anywhere else. Names are read by
-   replaying the joins in order: each join drops the earlier holder of
-   that name and the earlier name of that door, and what remains is the
-   bag. History is a file you can `cat`. Ledgers written before names, and
+   replaying the joins and leaves in order: each join drops the earlier
+   holder of that name and the earlier name of that door, each leave
+   drops the name its own door held, and what remains is the bag. History is a file you can `cat`. Ledgers written before names, and
    ledgers written when bags still had budgets, read without rewriting.
    The roster in an envelope is a snapshot at submission, not a promise of
    what remains when the letter is read. A letter record carries `final`
    only when it is true. Every record keeps its line number `n`, including
-   joins and historical opens. `read N` shows the last N records, and MCP
+   joins, leaves and historical opens. `read N` shows the last N records, and MCP
    paging cursors are record numbers. A letter's displayed number is its
    position among the bag's letters.
 5. **postbag has no brake.** It sets no limit on how many letters a bag
@@ -159,17 +159,17 @@ Joining creates a bag from either interface. See
    it refuse. Ending a Codex client does not: its saved thread can still
    accept queued letters, which it reads when resumed. Neither recalls a
    letter already queued or cancels a send in flight. Taking write
-   permission from the bag makes later `send` and `join` refuse at their
-   open, while `read` and `bags` still work on a readable file. A process
+   permission from the bag makes later `send`, `join` and `leave` refuse
+   at their open, while `read` and `bags` still work on a readable file. A process
    that already holds the ledger finishes, and one already waiting for the
    lock rechecks the mode when it gets it. postbag sets the file mode only
    when it creates the file. A
    recipient's inbound policy, where its host offers one, can hold or
    refuse letters before its model sees them. Refusals tell the agent to
    stop and ask the human. That suffix is an instruction to the agent,
-   not a claim that the human holds a verb. Who may run `join` and
-   `send` is decided by the session variables the vendors themselves
-   export.
+   not a claim that the human holds a verb. Who may run `join`,
+   `send` and `leave` is decided by the session variables the vendors
+   themselves export.
 6. **Everything the agents share is the repository.** The bridge moves
    text, never files. Work products travel through git.
 
@@ -195,8 +195,9 @@ from that bag too. Letters already queued to a Codex thread still arrive,
 and a `send` that took the ledger lock first finishes before the leave is
 recorded. Once it is recorded, later lookups refuse until a `join`
 restores a binding. A `join` after a leave is deliberate: a refusal that
-follows a leave names the leave, so an old queued letter cannot talk a
-departed door back in by accident. `leave` never deletes the bag or its
+follows a leave names the leave and tells the agent not to join again
+unless the human asks. That is guidance to a model, which can still call
+`join`, not enforcement. `leave` never deletes the bag or its
 history. Over MCP it is `postbag_leave` with the bag alone, and the name
 is derived from the door, never passed.
 
