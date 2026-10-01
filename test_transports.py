@@ -70,7 +70,7 @@ def test_codex_timeout_after_submission_warns_without_retry_or_append(joined, mo
     assert error.value.submission_state == "unknown"
     assert len(submissions) == 1 and "one attempted submission" in submissions[0]
     assert joined.ledger_path().read_bytes() == before
-    assert joined.budget() == 3
+    assert joined.Snapshot(joined.records()).letters == 0
 
 
 def test_codex_nonzero_exit_after_submission_has_an_unknown_outcome(joined, monkeypatch):
@@ -92,7 +92,7 @@ def test_codex_nonzero_exit_after_submission_has_an_unknown_outcome(joined, monk
     assert "join codex" not in str(error.value)
     assert len(submissions) == 1
     assert joined.ledger_path().read_bytes() == before
-    assert joined.budget() == 3
+    assert joined.Snapshot(joined.records()).letters == 0
 
 
 @pytest.mark.parametrize("failure_at", ["connect", "write"])
@@ -137,15 +137,16 @@ def test_claude_connection_and_partial_write_failures_have_distinct_outcomes(
         assert "door did not answer" in str(error.value)
         assert not writes
     assert joined.ledger_path().read_bytes() == before
-    assert joined.budget() == 3
+    assert joined.Snapshot(joined.records()).letters == 0
 
 
 @pytest.mark.parametrize("wait", [True, False])
-def test_send_returns_submission_metadata_without_body_or_credentials(joined, wait):
-    result = joined.send("codex", "one recorded submission", wait=wait)
+@pytest.mark.parametrize("final", [False, True])
+def test_send_returns_submission_metadata_without_body_or_credentials(joined, wait, final):
+    result = joined.send("codex", "one recorded submission", final=final, wait=wait)
     assert result == {
-        "bag": str(joined.ledger_path()), "from": "claude", "to": "codex", "record": 4,
-        "exchange": 1, "letter": 1, "remaining": 2, "submission_state": "submitted",
+        "bag": str(joined.ledger_path()), "from": "claude", "to": "codex", "record": 3,
+        "letter": 1, "final": final, "submission_state": "submitted",
     }
 
 
@@ -194,7 +195,6 @@ def test_buffered_append_failure_preserves_submission_warning_after_close(tmp_pa
         import sys
 
         bag = runpy.run_path(sys.argv[1])
-        bag['open_exchange'](1)
         os.environ['CODEX_SESSION_ID'] = 'fake-thread-not-a-live-session'
         bag['join']('codex')
         del os.environ['CODEX_SESSION_ID']

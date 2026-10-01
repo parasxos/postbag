@@ -100,10 +100,10 @@ def compact(text):
 def wide_columns(text):
     lines = text.splitlines()
     header_index = next(i for i, line in enumerate(lines)
-                        if re.search(r"\bBag\s+Letters left\s+Last letter\s+Registered peers\b", line))
+                        if re.search(r"\bBag\s+Letters\s+Last letter\s+Registered peers\b", line))
     header = lines[header_index]
     assert "|" not in header
-    starts = [header.index(label) for label in ("Bag", "Letters left", "Last letter", "Registered peers")]
+    starts = [header.index(label) for label in ("Bag", "Letters", "Last letter", "Registered peers")]
     body = lines[header_index + 1:]
     return ["\n".join(cell_slice(line, start, starts[i + 1] if i < 3 else None)
                       for line in body) for i, start in enumerate(starts)]
@@ -123,9 +123,10 @@ def test_wide_terminal_has_four_columns_and_omits_zero_summary_categories(termin
     assert result.returncode == 0 and result.stderr == ""
     text = plain(result.stdout)
     wide_columns(text)
-    first = next(line for line in text.splitlines() if line.strip())
+    first, summary = [line for line in text.splitlines() if line.strip()][:2]
     assert re.search(r"\b2\s+bags?\b", first, re.I)
-    assert not re.search(r"\b0\s+(?:spent|never opened|unavailable)\b", first, re.I)
+    assert re.search(r"\b1\s+with letters\b", summary) and re.search(r"\b1\s+empty\b", summary)
+    assert not re.search(r"\b0\s+(?:with letters|empty|unavailable)\b", text, re.I)
     assert "|" not in text
 
 
@@ -180,10 +181,11 @@ def test_known_no_letters_and_unavailable_bag_remain_distinct(terminal):
     text = plain(result.stdout)
     empty_line = next(line for line in text.splitlines() if re.match(r"\s*empty\s", line))
     broken_line = next(line for line in text.splitlines() if re.match(r"\s*broken\s", line))
-    assert "never opened" in empty_line.lower()
+    assert re.search(r"\bempty\s+0\s+No letters\b", empty_line)
     assert "unavailable" in broken_line.lower()
     assert "unavailable" not in empty_line.lower()
     assert "no letters" not in broken_line.lower()
+    assert re.search(r"\b1\s+empty\b", text) and re.search(r"\b1\s+unavailable\b", text)
 
 
 @pytest.mark.parametrize("columns", [40, 80, 120])
@@ -206,7 +208,8 @@ def test_terminal_wraps_all_paths_and_peer_names_without_losing_glyphs(terminal,
         assert compact(str(path)) in compact(text)
         assert "Codex:" in text
         assert all(f"@{name}" in compact(text) for name in names)
-        assert not re.search(r"\bBag\s+Letters left\s+Last letter\s+Registered peers\b", text)
+        assert not re.search(r"\bBag\s+Letters\s+Last letter\s+Registered peers\b", text)
+        assert "0 letters  |  Last letter: No letters" in text
     assert fingerprint(path) == before
 
 
@@ -259,7 +262,7 @@ def test_piped_output_stays_byte_identical_across_terminal_settings(terminal):
     assert baseline.returncode == 0 and baseline.stderr == ""
     assert list(table(baseline.stdout)) == ["default", "alpha", "zeta"]
     assert "2026-09-18T19:00:00+02:00" in baseline.stdout
-    assert "0 spent, 0 never opened, 0 unavailable" in baseline.stdout
+    assert baseline.stdout.startswith("3 bags found: 3 with letters.\n")
     for columns, extra in ((40, {}), (80, {"NO_COLOR": "1"}), (120, {"TERM": "dumb"})):
         result = cli.terminal(columns=columns, tty=False, extra=extra)
         assert (result.returncode, result.stdout, result.stderr) == (

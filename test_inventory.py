@@ -87,6 +87,7 @@ def seed(path, *records):
     rows = [dict(n=number, at=f"2026-09-19T10:00:{number:02d}+02:00", **record)
             for number, record in enumerate(records, 1)]
     path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    path.chmod(0o600)  # as postbag creates it. Tests that want an exposed ledger re-mode it themselves
     return rows
 
 
@@ -100,24 +101,26 @@ def table(output):
     lines = output.splitlines()
     header = next(i for i, line in enumerate(lines)
                   if [cell.strip() for cell in line.split("|")] ==
-                  ["Bag", "Letters left", "Last letter", "Registered peers"])
+                  ["Bag", "Letters", "Last letter", "Registered peers"])
     rows = {}
     for line in lines[header + 1:]:
         cells = [cell.strip() for cell in line.split("|")]
         if len(cells) != 4 or not cells[0] or set("".join(cells)) <= {"-", ":", "+"}:
             continue
         assert cells[0] not in rows, f"duplicate inventory row: {cells[0]}"
-        rows[cells[0]] = dict(zip(("left", "last", "peers"), cells[1:]))
+        rows[cells[0]] = dict(zip(("letters", "last", "peers"), cells[1:]))
     return rows
 
 
-def counts(output, *, total, left, spent, never, unavailable):
-    # The prose and punctuation may change; the five factual counts may not.
-    for amount, label in (
-        (total, r"bags?\b"), (left, r"with letters left\b"), (spent, r"spent\b"),
-        (never, r"never opened\b"), (unavailable, r"unavailable\b"),
-    ):
-        assert re.search(rf"\b{amount}\s+{label}", output, re.I), output
+def counts(output, *, total, letters, empty, unavailable):
+    # The prose and punctuation may change. The four factual counts may not, and zero counts are omitted.
+    summary = output.splitlines()[0]
+    assert re.search(rf"\b{total}\s+bags?\b", summary, re.I), output
+    for amount, label in ((letters, r"with letters\b"), (empty, r"empty\b"), (unavailable, r"unavailable\b")):
+        if amount:
+            assert re.search(rf"\b{amount}\s+{label}", summary, re.I), output
+        else:
+            assert not re.search(rf"\d+\s+{label}", summary, re.I), output
 
 
 def success(result):
@@ -145,7 +148,7 @@ def test_empty_inventory_does_not_create_home_state_or_selected_path(inventory_c
             ["--bag", str(missing)] if selection == "custom" else [])
     result = cli.run(*args, "bags")
     assert success(result) == {}
-    counts(result.stdout, total=0, left=0, spent=0, never=0, unavailable=0)
+    counts(result.stdout, total=0, letters=0, empty=0, unavailable=0)
     assert not (cli.home / ".postbag").exists()
     assert not list(cli.cwd.iterdir())
 
@@ -163,10 +166,10 @@ def test_inventory_discovers_only_default_and_valid_direct_named_files(inventory
     result = cli.run("bags")
     rows = success(result)
     assert set(rows) == {"default", "review", "a" * 16, "edge-"}
-    counts(result.stdout, total=4, left=4, spent=0, never=0, unavailable=0)
+    counts(result.stdout, total=4, letters=0, empty=4, unavailable=0)
 
 
-def test_summary_replays_budgets_and_tolerates_legacy_overrun(inventory_cli):
+def test_summary_counts_letters_and_tolerates_legacy_opens_and_overruns(inventory_cli):
     cli = inventory_cli
     seed(cli.default, opened(3), letter())
     seed(cli.named / "empty.jsonl")
@@ -176,13 +179,14 @@ def test_summary_replays_budgets_and_tolerates_legacy_overrun(inventory_cli):
     reopened = seed(cli.named / "reopened.jsonl", opened(1), letter(), opened(7))
     result = cli.run("bags")
     rows = success(result)
-    counts(result.stdout, total=6, left=2, spent=2, never=2, unavailable=0)
-    assert re.search(r"\b2\b", rows["default"]["left"])
-    assert re.search(r"\b7\b", rows["reopened"]["left"])
+    counts(result.stdout, total=6, letters=5, empty=1, unavailable=0)
+    assert {label: row["letters"] for label, row in rows.items()} == {
+        "default": "1", "empty": "0", "spent": "1", "overrun": "2", "unopened": "1", "reopened": "1",
+    }
     assert rows["empty"]["last"] == "-"
     assert rows["unopened"]["last"] == before[-1]["at"]
     assert rows["reopened"]["last"] == reopened[1]["at"]
-    assert "unavailable" not in rows["overrun"]["left"].lower()
+    assert "exchange" not in result.stdout and "budget" not in result.stdout.lower()
 
 
 def test_last_letter_and_current_peers_use_full_legacy_replay_without_disclosing_contents(inventory_cli):
@@ -205,7 +209,7 @@ def test_last_letter_and_current_peers_use_full_legacy_replay_without_disclosing
     rows = success(result)
     assert rows["default"]["last"] == records[3]["at"]
     assert rows["default"]["peers"] == "@bob (codex), @cleo (claude)"
-    assert re.search(r"\b4\b", rows["default"]["left"])
+    assert rows["default"]["letters"] == "1"
     assert all(secret not in result.stdout + result.stderr for secret in (
         PRIVATE_BODY, PRIVATE_SOCKET, PRIVATE_TOKEN, PRIVATE_THREAD,
         "fake-replacement", "fake-other-token",
@@ -226,7 +230,7 @@ def test_selected_custom_path_is_included_without_searching_for_other_custom_led
     extra = {"POSTBAG_LEDGER": str(unrelated if selector == "flag" else selected)}
     result = cli.run(*args, "bags", extra=extra)
     assert set(success(result)) == {"default", str(selected)}
-    counts(result.stdout, total=2, left=2, spent=0, never=0, unavailable=0)
+    counts(result.stdout, total=2, letters=0, empty=2, unavailable=0)
     assert {path: fingerprint(path) for path in before} == before
 
 
@@ -239,7 +243,7 @@ def test_selected_standard_path_is_deduplicated_under_its_canonical_label(invent
     args = ["--bag", str(path)] if selector == "flag" else []
     result = cli.run(*args, "bags", extra={"POSTBAG_LEDGER": str(path)})
     assert set(success(result)) == {canonical}
-    counts(result.stdout, total=1, left=1, spent=0, never=0, unavailable=0)
+    counts(result.stdout, total=1, letters=0, empty=1, unavailable=0)
 
 
 @pytest.mark.parametrize("canonical", ["default", "review"])
@@ -252,15 +256,15 @@ def test_parent_directory_alias_of_a_standard_file_is_deduplicated(inventory_cli
     args = ["--bag", str(alias)] if selector == "flag" else []
     result = cli.run(*args, "bags", extra={"POSTBAG_LEDGER": str(alias)})
     assert set(success(result)) == {canonical}
-    counts(result.stdout, total=1, left=1, spent=0, never=0, unavailable=0)
+    counts(result.stdout, total=1, letters=0, empty=1, unavailable=0)
 
 
 def test_symlink_then_parent_directory_keeps_distinct_underlying_files(inventory_cli):
     cli = inventory_cli
     standard = cli.named / "review.jsonl"
-    seed(standard, opened(2))
+    seed(standard, opened(2), letter(), letter())
     other = cli.cwd / "elsewhere" / "review.jsonl"
-    seed(other, opened(7))
+    seed(other, *(letter() for _ in range(7)))
     child = other.parent / "child"
     child.mkdir()
     (cli.named / "link").symlink_to(child, target_is_directory=True)
@@ -269,9 +273,9 @@ def test_symlink_then_parent_directory_keeps_distinct_underlying_files(inventory
     result = cli.run("--bag", str(alias), "bags")
     rows = success(result)
     assert set(rows) == {"review", str(alias)}
-    assert rows["review"]["left"] == "2/2"
-    assert rows[str(alias)]["left"] == "7/7"
-    counts(result.stdout, total=2, left=2, spent=0, never=0, unavailable=0)
+    assert rows["review"]["letters"] == "2"
+    assert rows[str(alias)]["letters"] == "7"
+    counts(result.stdout, total=2, letters=2, empty=0, unavailable=0)
     assert {path: fingerprint(path) for path in before} == before
 
 
@@ -285,8 +289,8 @@ def test_selected_final_symlink_is_unavailable_instead_of_deduplicated_with_its_
     result = cli.run("--bag", str(alias), "bags")
     rows = sanitized_failure(result)
     assert set(rows) == {"review", str(alias)}
-    assert rows[str(alias)]["left"].lower() == "unavailable"
-    counts(result.stdout, total=2, left=1, spent=0, never=0, unavailable=1)
+    assert rows[str(alias)]["letters"].lower() == "unavailable"
+    counts(result.stdout, total=2, letters=0, empty=1, unavailable=1)
     assert alias.is_symlink() and fingerprint(standard) == before
 
 
@@ -333,9 +337,9 @@ def test_bad_ledger_is_an_unavailable_row_while_other_bags_remain_visible(invent
     result = cli.run("bags")
     rows = sanitized_failure(result)
     assert set(rows) == {"default", "broken"}
-    assert rows["broken"]["left"].lower() == "unavailable"
+    assert rows["broken"]["letters"].lower() == "unavailable"
     assert "broken" in result.stderr
-    counts(result.stdout, total=2, left=1, spent=0, never=0, unavailable=1)
+    counts(result.stdout, total=2, letters=0, empty=1, unavailable=1)
     assert fingerprint(broken) == before
 
 
@@ -360,8 +364,8 @@ def test_nonregular_candidate_is_reported_without_following_or_blocking(inventor
     result = cli.run("bags")
     rows = sanitized_failure(result)
     assert set(rows) == {"default", "unsafe"}
-    assert rows["unsafe"]["left"].lower() == "unavailable"
-    counts(result.stdout, total=2, left=1, spent=0, never=0, unavailable=1)
+    assert rows["unsafe"]["letters"].lower() == "unavailable"
+    counts(result.stdout, total=2, letters=0, empty=1, unavailable=1)
     assert path.lstat().st_mode == mode
     if kind == "symlink":
         assert fingerprint(target) == before
@@ -380,9 +384,9 @@ def test_exclusively_locked_bag_is_unavailable_without_delaying_other_rows(inven
         result = cli.run("bags")  # Fixture timeout catches a blocking LOCK_SH.
     rows = sanitized_failure(result)
     assert set(rows) == {"default", "locked"}
-    assert rows["locked"]["left"].lower() == "unavailable"
+    assert rows["locked"]["letters"].lower() == "unavailable"
     assert re.search(r"busy|lock", result.stderr, re.I)
-    counts(result.stdout, total=2, left=1, spent=0, never=0, unavailable=1)
+    counts(result.stdout, total=2, letters=0, empty=1, unavailable=1)
     assert fingerprint(locked) == before
 
 
@@ -438,7 +442,7 @@ postbag.main(['bags'])
     )
     rows = sanitized_failure(result)
     assert set(rows) == {"default", "review"}
-    counts(result.stdout, total=2, left=2, spent=0, never=0, unavailable=0)
+    counts(result.stdout, total=2, letters=0, empty=2, unavailable=0)
     assert "incomplete" in result.stdout.lower()
     assert str(cli.named) in result.stderr
     assert {path: fingerprint(path) for path in before} == before
@@ -456,8 +460,8 @@ def test_unreadable_ledger_remains_unavailable_without_changing_its_permissions(
         result = cli.run("bags")
         rows = sanitized_failure(result)
         assert set(rows) == {"default", "private"}
-        assert rows["private"]["left"].lower() == "unavailable"
-        counts(result.stdout, total=2, left=1, spent=0, never=0, unavailable=1)
+        assert rows["private"]["letters"].lower() == "unavailable"
+        counts(result.stdout, total=2, letters=0, empty=1, unavailable=1)
         assert stat.S_IMODE(unreadable.stat().st_mode) == 0
     finally:
         unreadable.chmod(0o600)

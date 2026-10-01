@@ -1,11 +1,10 @@
 """postbag: any two sessions correspond by letters. See CONCEPT.md.
 
     postbag [--bag NAME] <verb>   # select a named bag or an absolute ledger path
-    postbag join claude|codex [name]  # inside that session: register its named door
-    postbag open [--limit N]      # a human opens one shared letter budget
-    postbag send @bob "text"      # send from this session's registered name; "-" reads stdin
+    postbag join claude|codex [name]  # inside that session: register its named door, creating the bag
+    postbag send [--final] @bob "text"  # send from this session's registered name; "-" reads stdin
     postbag read [N]              # the ledger, or its last N records
-    postbag bags                  # local bags, their budgets and registered peers
+    postbag bags                  # local bags, their letters and registered peers
 """
 import argparse
 import errno
@@ -24,7 +23,7 @@ from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "1.4.0"
+__version__ = "2.0.0"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
@@ -72,13 +71,16 @@ class Bag:
     def command(self, words):
         return f"postbag --bag {self.argument} {words}"
 
-    def missing(self):
-        fail(f"bag {self.label} does not exist, ask the human to run: {self.command('open')}",
-             recovery={"action": "open", "actor": "human", "bag": self.label})
-
-    def require_existing(self):
-        if self.named and not self.path.exists():
-            self.missing()
+    def absent(self, verb):
+        """Refuse a verb on a bag that does not exist. Nothing is created, not even a directory."""
+        if verb == "send":
+            sources = sorted(inside())
+            commands = " or ".join(self.command(f"join {source}") for source in sources or sorted(PEERS))
+            fail(f"bag {self.label} does not exist, create it from your session with: {commands}",
+                 recovery={"action": "join", "actor": "caller", "bag": self.label,
+                           "vendor": sources[0] if len(sources) == 1 else None, "name": None})
+        fail(f"bag {self.label} does not exist, run: postbag bags",
+             recovery={"action": "bags", "actor": "caller", "bag": self.label})
 
 
 def bag():
@@ -101,8 +103,8 @@ class Refusal(SystemExit):
     """A CLI refusal with submission metadata for programmatic callers.
 
     recovery, when present, names the one step that clears the refusal: an action
-    (join, open or read), who performs it (caller, recipient or human), the bag, and
-    for a join the vendor and name when they are known. The message text stays the
+    (join, read or bags), who performs it (caller or recipient), the bag, and for a
+    join the vendor and name when they are known. The message text stays the
     contract for humans, and recovery is the same advice for programs.
     """
 
@@ -193,19 +195,21 @@ def check(rec, i, path):
         ok = (valid_name(peer) and text(source) and source in SESSION
               and (peer not in PEERS or peer == source)
               and all(text(rec.get(f)) for f in SESSION[source]))
-    elif kind == "open":
+    elif kind == "open":  # written by 1.x, inert history that still has to be well formed
         ok = count(rec.get("limit")) and rec["limit"] >= 1
     elif kind == "letter":
         a, b = rec.get("from"), rec.get("to")
-        # a letter before the first open, or past its exchange's limit, is history and still reads
-        ok = valid_name(a) and valid_name(b) and a != b and text(rec.get("body"))
+        ok = (valid_name(a) and valid_name(b) and a != b and text(rec.get("body"))
+              and ("final" not in rec or type(rec["final"]) is bool))
     else:
         ok = False
     if not ok:
         fail(f"ledger line {i} is not a record ({path})")
 
 
-def records(*, wait=True, missing_ok=True):
+def records(*, wait=True, refuse_missing=True):
+    """Every record of the selected ledger. A missing ledger refuses and points to bags,
+    unless the caller asked for the FileNotFoundError itself. Nothing is ever created."""
     path = ledger_path()
     if _held is not None:
         _held.seek(0)
@@ -214,11 +218,9 @@ def records(*, wait=True, missing_ok=True):
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         except FileNotFoundError:
-            if not missing_ok:
+            if not refuse_missing:
                 raise
-            if bag().named:
-                bag().missing()
-            return []
+            bag().absent("read")
         except OSError as e:
             fail(f"cannot open the ledger ({e})")
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -246,14 +248,31 @@ def record(kind, **fields):
     return {"n": len(records()) + 1, "at": at, "kind": kind, **fields}
 
 
+def exposed(mode):
+    """Why an existing ledger's mode disqualifies it from any mutation, or None."""
+    if mode & 0o077:
+        return "the ledger grants other users access, fix its mode to 0600"
+    if mode & 0o600 != 0o600:
+        return "the ledger lacks owner read and write"
+    return None
+
+
 @contextmanager
 def ledger(create=False, *, wait=True):
-    """The ledger held exclusively and made private; yields the function that appends one record."""
+    """The ledger held exclusively. Yields the function that appends one record.
+
+    Only join passes create=True. Creation is established by one O_CREAT|O_EXCL open and
+    by nothing else: when that open finds the file already there, the file is opened as it
+    is. A created file gets mode 0600. An existing file is never re-moded, and a mode that
+    grants group or other access, or lacks owner read and write, refuses before any parse,
+    knock or append. Without create, a missing ledger refuses and points to join.
+    """
     global _held
     path = ledger_path()
+    flags = os.O_RDWR | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK
+    created = False
     try:
-        creating = create or not bag().named
-        if creating:
+        if create:
             # mkdir(parents=True) does not apply mode to intermediate directories.
             missing = []
             parent = path.parent
@@ -262,24 +281,38 @@ def ledger(create=False, *, wait=True):
                 parent = parent.parent
             for parent in reversed(missing):
                 parent.mkdir(mode=0o700, exist_ok=True)
-        flags = os.O_RDWR | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK
-        fd = os.open(path, flags | (os.O_CREAT if creating else 0), 0o600)
+            try:
+                fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+                created = True
+            except FileExistsError:
+                fd = os.open(path, flags)
+        else:
+            fd = os.open(path, flags)
     except FileNotFoundError as e:
-        if bag().named and not creating:
-            bag().missing()
+        if not create:
+            bag().absent("send")
         fail(f"cannot open the ledger ({e})")
     except OSError as e:
         fail(f"cannot open the ledger ({e})")
-    if not stat.S_ISREG(os.fstat(fd).st_mode):
+    try:  # the raw descriptor is ours until fdopen owns it, so any failure here must close it
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            fail(f"the ledger is not a regular file ({path})")
+        f = os.fdopen(fd, "a+", encoding="utf-8")
+    except BaseException:
         os.close(fd)
-        fail(f"the ledger is not a regular file ({path})")
-    with os.fdopen(fd, "a+", encoding="utf-8") as f:
+        raise
+    with f:
+        if created:
+            os.fchmod(f.fileno(), 0o600)  # the open mode is subject to the umask
         try:
             fcntl.flock(f, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError:
             fail("the ledger is busy, read the bag before doing anything else", error_code="ledger_busy",
                  recovery={"action": "read", "actor": "caller", "bag": bag().label})
-        os.fchmod(f.fileno(), 0o600)
+        if not created:
+            why = exposed(stat.S_IMODE(os.fstat(f.fileno()).st_mode))
+            if why:
+                fail(why)
         _held = f
         try:
             yield lambda rec: (f.write(json.dumps(rec) + "\n"), f.flush(), os.fsync(f.fileno()))
@@ -287,39 +320,31 @@ def ledger(create=False, *, wait=True):
             _held = None
 
 
-def budget():
-    """Letters left in the open exchange; None when no exchange is open."""
-    return Snapshot(records()).left
-
-
 class Snapshot:
-    """Replay one ledger snapshot into current bindings and annotated history."""
+    """Replay one ledger snapshot into current bindings and annotated history.
+
+    peers maps each held name to its join record. letters counts the bag's letters.
+    history holds one (rec, letter, note) per record: letter is the record's position
+    among the bag's letters, or None for the other kinds, and note is the (renamed, taken)
+    pair of a join, or ([], None) otherwise.
+    """
 
     def __init__(self, rows):
         self.peers = {}
-        self.exchange = 0
-        self.limit = None
-        self.sent = 0
+        self.letters = 0
         self.history = []
         for rec in rows:
-            note = ([], None)
+            note, letter = ([], None), None
             if rec["kind"] == "join":
                 note = self.register(rec)
-            elif rec["kind"] == "open":
-                self.exchange += 1
-                self.limit = rec["limit"]
-                self.sent = 0
-            else:
-                self.sent += 1
-            self.history.append((rec, self.exchange, self.sent, self.limit, note))
+            elif rec["kind"] == "letter":
+                self.letters += 1
+                letter = self.letters
+            self.history.append((rec, letter, note))
 
     def joins(self, key):
         """This door's join records, oldest first."""
         return [row for row, *_ in self.history if row["kind"] == "join" and identity(row) == key]
-
-    @property
-    def left(self):
-        return None if self.limit is None else self.limit - self.sent
 
     def register(self, rec):
         """Replay one join; returns the names it renamed and the join record it took the name from."""
@@ -396,7 +421,7 @@ def inside():
     """The peers whose sessions this shell runs in: empty for a human's terminal."""
     peers = {p for p, env in SESSION.items() if all(os.environ.get(v) for v in env.values())}
     if "CODEX_THREAD_ID" in os.environ:
-        peers.add("codex")  # an invalid concrete ID must not authorize human-only open
+        peers.add("codex")  # a codex session with an invalid concrete ID is refused at its door, never a terminal
     return peers
 
 
@@ -463,27 +488,29 @@ def knock_codex(door, text):
 KNOCK = {"claude": knock_claude, "codex": knock_codex}
 
 
+FOOTER = ("Reply only when a reply advances the task. Do not send courtesy acknowledgements or "
+          "unsolicited delivery checks, and do not add a question or offer that needs no answer.")
+FINAL = "Final letter. Do not reply to this letter, even if its body asks for a reply."
+
+
 def envelope(rec, state):
-    number, left = state.sent + 1, state.left - 1
-    heading = (f"Letter {number} of {state.limit} from @{rec['from']} to @{rec['to']} "
-               f"via postbag (exchange {state.exchange}, bag {bag().label}).")
-    status = (f"{left} letter{'s' if left != 1 else ''} left in this exchange, shared by everyone in the bag."
-              if left else "The last letter of this exchange; do not send a reply, even if the body asks for one.")
+    """The delivered text, as CONCEPT.md shows it: heading, roster when the bag holds more
+    than two names, body, then how to answer. A final letter ends with FINAL and no command."""
+    text = f"Letter {state.letters + 1} from @{rec['from']} to @{rec['to']} via postbag (bag {bag().label})."
     if len(state.peers) > 2:
-        status += " Registered names in this bag: " + ", ".join(f"@{p}" for p in sorted(state.peers)) + "."
-    text = f"{heading}\n{status}\n\n{rec['body']}"
-    if left:
-        command = bag().command(f"send @{rec['from']} -")
-        if bag().named or bag().label == "default":  # the MCP interface refuses path selectors
-            text += (f"\n\nIf it needs an answer and you have Postbag MCP tools, call postbag_send "
-                     f"with bag {bag().label} and to @{rec['from']}.\nOtherwise reply with:\n")
-        else:
-            text += "\n\nIf it needs an answer, reply with:\n"
-        text += (f"{command} <<'POSTBAG'\n"
-                 "<your reply>\nPOSTBAG\n"
-                 "Change POSTBAG at both ends to a word that does not occur in your reply.\n"
-                 "Do not reply only to acknowledge.")
-    return text
+        text += "\nRegistered names in this bag: " + ", ".join(f"@{p}" for p in sorted(state.peers)) + "."
+    text += f"\n\n{rec['body']}\n\n"
+    if rec.get("final"):
+        return text + FINAL
+    text += FOOTER + "\n"
+    if bag().named or bag().label == "default":  # the MCP interface refuses path selectors
+        text += (f"If you have Postbag MCP tools, call postbag_send with bag {bag().label} and to @{rec['from']}.\n"
+                 "Otherwise reply with:\n")
+    else:
+        text += "If it needs an answer, reply with:\n"
+    command = bag().command(f"send @{rec['from']} -")
+    return text + (f"{command} <<'POSTBAG'\n<your reply>\nPOSTBAG\n"
+                   "Change POSTBAG at both ends to a word that does not occur in your reply.")
 
 
 # verbs ----------------------------------------------------------------------
@@ -495,7 +522,7 @@ def join(source, peer=None, *, wait=True):
     if peer in PEERS and peer != source:
         fail(f"@{peer} is reserved for {peer} doors")
     fields = current_door(source)
-    with ledger(wait=wait) as write:
+    with ledger(create=True, wait=wait) as write:
         state = Snapshot(records())
         rec = record("join", peer=peer, vendor=source, **fields)
         conversation = session_id(os.environ.get("CLAUDE_CODE_SESSION_ID")) if source == "claude" else None
@@ -509,17 +536,11 @@ def join(source, peer=None, *, wait=True):
             "took": {"vendor": vendor(taken), "at": display_stamp(taken["at"])} if taken else None}
 
 
-def open_exchange(limit):
-    if inside():
-        fail("open is the human's verb")
-    with ledger(create=True) as write:
-        write(record("open", limit=limit))
-    print(f"exchange open: {limit} letters in bag {bag().label}")
-
-
-def send(to, body, *, wait=True):
+def send(to, body, *, final=False, wait=True):
     """Submit once; return receipt metadata without asserting recipient acceptance."""
     to = name(to, mention=True)
+    if type(final) is not bool:
+        fail("final must be true or false", error_code="invalid_input")
     if "\0" in body:
         fail("a letter cannot contain a NUL byte", error_code="invalid_input")
     if not body.strip():
@@ -533,15 +554,12 @@ def send(to, body, *, wait=True):
             sender = state.sender()
             if sender == to:
                 fail(f"@{to} is your own name")
-            left = state.left
-            reopen = {"action": "open", "actor": "human", "bag": bag().label}
-            if left is None:
-                fail("no exchange is open", recovery=reopen)
-            if left <= 0:
-                fail("the exchange's letters are spent", recovery=reopen)
             target = state.target(to)
-            rec = record("letter", **{"from": sender, "to": to, "body": body})
-            label = f"letter {state.sent + 1} of {state.limit} in exchange {state.exchange}"
+            fields = {"from": sender, "to": to, "body": body}
+            if final:
+                fields["final"] = True  # the record carries final only when it is true
+            rec = record("letter", **fields)
+            label = f"letter {state.letters + 1}"
             try:
                 KNOCK[vendor(target)](target, envelope(rec, state))
             except OSError as e:
@@ -567,33 +585,31 @@ def send(to, body, *, wait=True):
         fail(f"{submitted} was submitted to @{to}'s door but its recording could not be confirmed ({e}), "
              f"do not resend before inspecting the bag and @{to}'s session",
              error_code="recording_failed", submission_state="submitted")
-    print(f"{label} delivered to @{to} in bag {bag().label}, {left - 1} left")
+    print(f"{label} delivered to @{to} in bag {bag().label}")
     return {"bag": bag().label, "from": sender, "to": to, "record": rec["n"],
-            "exchange": state.exchange, "letter": state.sent + 1, "remaining": left - 1,
-            "submission_state": "submitted"}
+            "letter": state.letters + 1, "final": final, "submission_state": "submitted"}
+
+
+def plural(count, noun):
+    return f"{count} {noun}{'' if count == 1 else 's'}"
 
 
 def read(count):
     state = Snapshot(records())
     names = ", ".join(f"@{peer} ({vendor(rec)})" for peer, rec in sorted(state.peers.items())) or "none"
-    current = (f"exchange {state.exchange}: {state.left} of {state.limit} letters left"
-               if state.limit is not None else "no open exchange")
+    letters = plural(state.letters, "letter") if state.letters else "no letters"
     experimental = " Experimental: more than two peers." if len(state.peers) > 2 else ""
-    print(f"in bag {bag().label}: {names}. {current}.{experimental}")
-    group = None
-    for rec, exchange, number, limit, note in state.history[-count:] if count else state.history:
-        if exchange != group:
-            print(f"\nexchange {exchange}, {limit} letters" if exchange else "\nbefore exchange 1")
-            group = exchange
+    print(f"in bag {bag().label}: {names}. {letters}.{experimental}")
+    for rec, letter, note in state.history[-count:] if count else state.history:
         kind = rec["kind"]
-        if kind == "letter":  # a letter's place in its exchange stands where the other kinds print their name
-            kind = f"{number}/{limit}" if limit is not None else "unassigned"
+        if kind == "letter":  # a letter's number in the bag stands where the other kinds print their name
+            kind = f"{letter} final" if rec.get("final") else str(letter)
         line = f"{rec['n']:>4}  {display_stamp(rec['at'])}  {kind:<6}"
         if rec["kind"] == "letter":
             print(f"{line} @{rec['from']} -> @{rec['to']}")
             print("\n".join("      " + l for l in rec["body"].splitlines()))
         elif rec["kind"] == "open":
-            print(f"{line} exchange {exchange}, {rec['limit']} letters")
+            print(f"{line} {rec['limit']} letters (history)")
         else:
             taken = notes(*note, lambda r: f"door that joined at line {r['n']}")
             print(", ".join([f"{line} @{rec['peer']} ({vendor(rec)})", *taken]))
@@ -666,16 +682,14 @@ def terminal_inventory(rows, counts, resumptions=None):
             print(" " * indent + (style(part, code) if code else part))
 
     line(f"{len(rows)} {'bag' if len(rows) == 1 else 'bags'}", "1")
-    summary = "  /  ".join(f"{counts[key]} {label}" for key, label in (
-        ("remaining", "with letters left"), ("spent", "spent"),
-        ("unopened", "never opened"), ("unavailable", "unavailable")) if counts[key])
+    summary = inventory_summary(counts, "  /  ")
     if summary:
         line(summary)
     now = datetime.now().astimezone()
     dated = [(row, *inventory_time(row[2], now)) for row in rows]
     dated.sort(key=lambda item: (item[2] is None, -(item[2] or 0), item[0][0]))
     entries = []
-    for (label, left, _, peers), when, _ in dated:
+    for (label, letters, _, peers), when, _ in dated:
         if peers is None:
             people, when = "Unavailable", "Unknown"
         elif not peers:
@@ -684,13 +698,13 @@ def terminal_inventory(rows, counts, resumptions=None):
             people = "  /  ".join(
                 f"{source.title()}: " + ", ".join(f"@{peer}" for peer, v in peers if v == source)
                 for source in sorted({v for _, v in peers}))
-        entries.append((label, left, when, people))
+        entries.append((label, "unavailable" if letters is None else str(letters), when, people))
 
     if entries:
         print()
     if entries and width >= 100:
         widths = [min(26, max(3, *(display_width(row[0]) for row in entries))),
-                  min(18, max(12, *(len(row[1]) for row in entries))), 16]
+                  min(12, max(7, *(len(row[1]) for row in entries))), 16]
         widths.append(width - sum(widths) - 6)
 
         def table_row(row, heading=False):
@@ -706,29 +720,41 @@ def terminal_inventory(rows, counts, resumptions=None):
                 print("  ".join(style(text, code) if code else text
                                 for text, code in zip([*padded, cells[-1]], codes)))
 
-        table_row(("Bag", "Letters left", "Last letter", "Registered peers"), heading=True)
+        table_row(("Bag", "Letters", "Last letter", "Registered peers"), heading=True)
         print()
         for row in entries:
             table_row(row)
             if resumptions is not None:
                 print_resumes(resumptions.get(row[0], []))
     else:
-        for label, left, when, people in entries:
+        for label, letters, when, people in entries:
             line(label, "1", words=False)
-            budget = f"{left} left" if left[0].isdigit() else left
-            line(f"{budget}  |  Last letter: {when}", indent=2)
+            held = plural(int(letters), "letter") if letters[0].isdigit() else letters
+            line(f"{held}  |  Last letter: {when}", indent=2)
             line(people, indent=2)
             if resumptions is not None:
                 print_resumes(resumptions.get(label, []))
             print()
     if entries and width >= 100:
         print()
-    line("Local times. Budgets do not expire. Registered does not mean running.")
+    line("Local times. Registered does not mean running.")
     line("Scope: ~/.postbag + selected custom path if present. Other paths are not listed.")
 
 
+def inventory_summary(counts, separator):
+    """The nonzero counts, as `N with letters`, `N empty` and `N unavailable`."""
+    return separator.join(f"{counts[key]} {label}" for key, label in (
+        ("letters", "with letters"), ("empty", "empty"), ("unavailable", "unavailable")) if counts[key])
+
+
 def inventory():
-    """Return rows, counts, resume metadata and problems without printing or contacting doors."""
+    """Return rows, counts, resume metadata and problems without printing or contacting doors.
+
+    rows: one (label, letters, last, peers) per bag, where letters is the number of letters
+    the bag holds, last the ISO stamp of the latest letter or "-", and peers the sorted
+    (name, vendor) pairs held now. An unavailable bag has letters None and peers None.
+    counts: bags with at least one letter, bags with none, and unavailable bags.
+    """
     selected = bag()
     default = Bag("default")
     directory = default.path.parent / "bags"
@@ -781,30 +807,22 @@ def inventory():
 
     rows = []
     resumptions = {}
-    counts = dict(remaining=0, spent=0, unopened=0, unavailable=0)
+    counts = dict(letters=0, empty=0, unavailable=0)
     for candidate in sorted(candidates.values(), key=lambda c: (c.label != "default", c.label)):
         token = _selection.set(candidate)
         try:
-            state = Snapshot(records(wait=False, missing_ok=False))
-            if state.left is None:
-                counts["unopened"] += 1
-                left = "never opened"
-            elif state.left <= 0:
-                counts["spent"] += 1
-                left = f"spent ({state.left}/{state.limit})"
-            else:
-                counts["remaining"] += 1
-                left = f"{state.left}/{state.limit}"
+            state = Snapshot(records(wait=False, refuse_missing=False))
+            counts["letters" if state.letters else "empty"] += 1
             last = next((datetime.fromisoformat(rec["at"]).isoformat()
                          for rec, *_ in reversed(state.history) if rec["kind"] == "letter"), "-")
             peers = [(peer, vendor(rec)) for peer, rec in sorted(state.peers.items())]
-            rows.append((candidate.label, left, last, peers))
+            rows.append((candidate.label, state.letters, last, peers))
             resumptions[candidate.label] = [
                 (peer, session_id(rec.get("session_id")))
                 for peer, rec in sorted(state.peers.items()) if vendor(rec) == "claude"]
         except (SystemExit, OSError, UnicodeError, ValueError, RecursionError) as e:
             counts["unavailable"] += 1
-            rows.append((candidate.label, "unavailable", "-", None))
+            rows.append((candidate.label, None, "-", None))
             if isinstance(e, SystemExit):
                 problems.append(str(e))
             else:
@@ -825,13 +843,12 @@ def bags(resume=False):
         terminal_inventory(rows, counts, resumptions if resume else None)
     else:
         total = len(rows)
-        print(f"{total} {'bag' if total == 1 else 'bags'} found: "
-              f"{counts['remaining']} with letters left, {counts['spent']} spent, "
-              f"{counts['unopened']} never opened, {counts['unavailable']} unavailable.")
-        table = [("Bag", "Letters left", "Last letter", "Registered peers"),
-                 *((label, left, last, "-" if peers is None else
+        summary = inventory_summary(counts, " / ")
+        print(f"{total} {'bag' if total == 1 else 'bags'} found" + (f": {summary}." if summary else "."))
+        table = [("Bag", "Letters", "Last letter", "Registered peers"),
+                 *((label, "unavailable" if letters is None else str(letters), last, "-" if peers is None else
                     ", ".join(f"@{peer} ({source})" for peer, source in peers) or "none")
-                   for label, left, last, peers in rows)]
+                   for label, letters, last, peers in rows)]
         widths = [max(len(row[i]) for row in table) for i in range(3)]
         for row in table:
             print(" | ".join([*(row[i].ljust(widths[i]) for i in range(3)), row[3]]))
@@ -839,7 +856,7 @@ def bags(resume=False):
                 print_resumes(resumptions.get(row[0], []))
         print(f"Scope: default and named bags under {Bag('default').path.parent}, "
               "plus the selected custom path if present. Other custom paths are not listed.")
-        print("Budgets do not expire. Registrations do not show whether sessions are running.")
+        print("Registrations do not show whether sessions are running.")
     if resume:
         conversations = [conversation for peers in resumptions.values() for _, conversation in peers]
         missing = conversations.count(None)
@@ -905,11 +922,10 @@ def cli(argv):
     j = sub.add_parser("join")
     j.add_argument("vendor", choices=sorted(PEERS))
     j.add_argument("name", nargs="?", help="the name to hold, by default the vendor")
-    sub.add_parser("open").add_argument("--limit", type=positive, default=12,
-                                        help="letters in the exchange, by default 12")
     s = sub.add_parser("send")
     s.add_argument("to", help="the recipient's name, with or without @")
     s.add_argument("body", help='the text, or "-" to read it from stdin')
+    s.add_argument("--final", action="store_true", help="mark the letter as one that asks for no reply")
     sub.add_parser("read").add_argument("count", nargs="?", type=positive, help="only the last N records")
     b = sub.add_parser("bags", help="list local bags without contacting sessions",
                    description="List the default and named bags, plus an existing selected custom path.")
@@ -917,8 +933,6 @@ def cli(argv):
     a = p.parse_args(argv)
     try:
         _selection.set(bag())  # Freeze the environment's path before any I/O or delivery.
-        if a.verb not in ("open", "bags"):
-            bag().require_existing()
         run(a)
         sys.stdout.flush()
     except BrokenPipeError:
@@ -932,10 +946,8 @@ def cli(argv):
 def run(a):
     if a.verb == "join":
         join(a.vendor, a.name)
-    elif a.verb == "open":
-        open_exchange(a.limit)
     elif a.verb == "send":
-        send(a.to, sys.stdin.read().rstrip("\n") if a.body == "-" else a.body)
+        send(a.to, sys.stdin.read().rstrip("\n") if a.body == "-" else a.body, final=a.final)
     elif a.verb == "read":
         read(a.count)
     else:

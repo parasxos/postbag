@@ -83,7 +83,8 @@ def assert_ok(result):
     assert result.returncode == 0, result.stderr
 
 
-def prepare_exchange(cli, limit, *, same_vendor=False):
+def prepare_pair(cli, *, same_vendor=False):
+    """Two joined peers. Returns the sender's vendor, the recipient's address and the sender's extra env."""
     if same_vendor:
         sender, recipient = "codex", "@bob"
         sender_extra = {"CODEX_SESSION_ID": "sender-thread-not-a-live-session"}
@@ -93,8 +94,12 @@ def prepare_exchange(cli, limit, *, same_vendor=False):
         sender, recipient, sender_extra = "claude", "codex", {}
         assert_ok(cli("join", "claude", peer="claude"))
         assert_ok(cli("join", "codex", peer="codex"))
-    assert_ok(cli("open", "--limit", str(limit)))
     return sender, recipient, sender_extra
+
+
+def prepare_exchange(cli, limit=None, *, same_vendor=False):
+    """Alias kept for the MCP test files, which still use the 1.x name and may pass the old limit."""
+    return prepare_pair(cli, same_vendor=same_vendor)
 
 
 def rows(path):
@@ -102,11 +107,9 @@ def rows(path):
 
 
 def read_history(cli, letter_count):
-    records = [{"n": 1, "at": "2026-09-09T08:00:00+02:00", "kind": "open",
-                "limit": max(1, letter_count)}]
-    records.extend({"n": i + 2, "at": "2026-09-09T08:00:01+02:00", "kind": "letter",
-                    "from": "claude", "to": "codex", "body": "x" * 1024}
-                   for i in range(letter_count))
+    records = [{"n": i + 1, "at": "2026-09-09T08:00:01+02:00", "kind": "letter",
+                "from": "claude", "to": "codex", "body": "x" * 1024}
+               for i in range(letter_count)]
     original = "".join(json.dumps(record) + "\n" for record in records).encode()
     cli.ledger.parent.mkdir()
     cli.ledger.write_bytes(original)
@@ -146,7 +149,7 @@ def test_read_can_be_piped_to_head(cli):
         _, stderr = producer.communicate(timeout=10)
 
     assert consumer.returncode == producer.returncode == 0, stderr
-    assert consumer.stdout == f"in bag {cli.ledger}: none. exchange 1: 0 of 400 letters left.\n"
+    assert consumer.stdout == f"in bag {cli.ledger}: none. 400 letters.\n"
     assert consumer.stderr == stderr == ""
     assert cli.ledger.read_bytes() == original
 
@@ -252,13 +255,24 @@ def test_join_keeps_ledger_private_even_with_permissive_umask(cli, preexisting):
     if preexisting:
         cli.ledger.parent.mkdir()
         cli.ledger.touch()
-        cli.ledger.chmod(0o644)
+        cli.ledger.chmod(0o600)
 
     assert_ok(cli("join", "codex", peer="codex", umask=0))
 
     assert stat.S_IMODE(cli.ledger.stat().st_mode) == 0o600
     if not preexisting:
         assert stat.S_IMODE(cli.ledger.parent.stat().st_mode) == 0o700
+
+
+def test_join_refuses_an_exposed_ledger_without_changing_it(cli):
+    cli.ledger.parent.mkdir()
+    cli.ledger.touch()
+    cli.ledger.chmod(0o644)
+    result = cli("join", "codex", peer="codex")
+    assert result.returncode == 1
+    assert "the ledger grants other users access, fix its mode to 0600" in result.stderr
+    assert result.stderr.rstrip("\n").endswith("; stop and ask the human")
+    assert stat.S_IMODE(cli.ledger.stat().st_mode) == 0o644 and cli.ledger.read_bytes() == b""
 
 
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
@@ -285,11 +299,10 @@ def test_claude_door_sends_auth_and_user_records_over_a_real_socket(cli, same_ve
                 extra={"CLAUDE_CODE_MESSAGING_SOCKET": socket_path},
             ))
             assert_ok(cli("join", sender, sender_name, peer=sender))
-            assert_ok(cli("open", "--limit", "1"))
             body = "A real socket, a fake token.\nUnicode: café 📨"
             with ThreadPoolExecutor(max_workers=1) as pool:
                 received = pool.submit(receive)
-                result = cli("send", f"@{recipient_name}", "-", peer=sender, input=body)
+                result = cli("send", f"@{recipient_name}", "--final", "-", peer=sender, input=body)
                 wire = received.result(timeout=6)
 
     assert_ok(result)
@@ -300,11 +313,10 @@ def test_claude_door_sends_auth_and_user_records_over_a_real_socket(cli, same_ve
     assert wire[1]["message"]["role"] == "user"
     content = wire[1]["message"]["content"]
     assert content.startswith(
-        f"Letter 1 of 1 from @{sender_name} to @{recipient_name} via postbag (exchange 1, bag {cli.ledger}).\n"
+        f"Letter 1 from @{sender_name} to @{recipient_name} via postbag (bag {cli.ledger}).\n"
     )
-    assert "do not send a reply" in content
-    assert content.endswith(body)
-    assert rows(cli.ledger)[-1]["body"] == body
+    assert content.endswith(f"\n\n{body}\n\nFinal letter. Do not reply to this letter, even if its body asks for a reply.")
+    assert rows(cli.ledger)[-1]["body"] == body and rows(cli.ledger)[-1]["final"] is True
 
 
 def test_closed_named_claude_socket_does_not_record_or_spend_a_letter(cli):
@@ -317,7 +329,6 @@ def test_closed_named_claude_socket_does_not_record_or_spend_a_letter(cli):
             "join", "claude", "bob", peer="claude",
             extra={"CLAUDE_CODE_MESSAGING_SOCKET": socket_path},
         ))
-        assert_ok(cli("open", "--limit", "1"))
         before = cli.ledger.read_bytes()
 
         result = cli("send", "@bob", "cannot be submitted", peer="claude")
@@ -333,7 +344,7 @@ def test_closed_named_claude_socket_does_not_record_or_spend_a_letter(cli):
 
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
 def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex, same_vendor):
-    sender, recipient, sender_extra = prepare_exchange(cli, 2, same_vendor=same_vendor)
+    sender, recipient, sender_extra = prepare_pair(cli, same_vendor=same_vendor)
     body = "quotes: ' and \"; $(never-run)\nsecond line"
 
     assert_ok(cli("send", recipient, body, peer=sender, extra={**fake_codex, **sender_extra}))
@@ -347,16 +358,17 @@ def test_codex_door_passes_the_body_as_one_argument(cli, fake_codex, same_vendor
     content = calls[0][4]
     sender_name, recipient_name = ("ada", "bob") if same_vendor else ("claude", "codex")
     assert content.startswith(
-        f"Letter 1 of 2 from @{sender_name} to @{recipient_name} via postbag (exchange 1, bag {cli.ledger}).\n"
+        f"Letter 1 from @{sender_name} to @{recipient_name} via postbag (bag {cli.ledger}).\n"
     )
-    assert f"\n\n{body}\n\nIf it needs an answer, reply with:\n" in content
+    assert f"\n\n{body}\n\nReply only when a reply advances the task." in content
+    assert "needs no answer.\nIf it needs an answer, reply with:\n" in content
     assert f"postbag --bag '{cli.ledger}' send @{sender_name} - <<'POSTBAG'" in content
     assert rows(cli.ledger)[-1]["body"] == body
 
 
 @pytest.mark.parametrize("sender, recipient", [("claude", "codex"), ("codex", "claude")])
 def test_nul_stdin_refuses_before_contacting_either_vendor(cli, fake_codex, sender, recipient):
-    prepare_exchange(cli, 1)
+    prepare_pair(cli)
     before = cli.ledger.read_bytes()
     result = cli("send", recipient, "-", peer=sender, extra=fake_codex, input="hello\0world")
     assert result.returncode == 1
@@ -368,7 +380,7 @@ def test_nul_stdin_refuses_before_contacting_either_vendor(cli, fake_codex, send
 
 
 def test_oversized_codex_stdin_is_a_clean_input_refusal(cli, fake_codex):
-    sender, recipient, extra = prepare_exchange(cli, 1)
+    sender, recipient, extra = prepare_pair(cli)
     before = cli.ledger.read_bytes()
     # This exceeds macOS ARG_MAX and Linux's per-argument limit.
     result = cli("send", recipient, "-", peer=sender, extra={**fake_codex, **extra}, input="x" * (1 << 20))
@@ -382,8 +394,8 @@ def test_oversized_codex_stdin_is_a_clean_input_refusal(cli, fake_codex):
 
 
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
-def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex, same_vendor):
-    sender, recipient, sender_extra = prepare_exchange(cli, 1, same_vendor=same_vendor)
+def test_rejected_codex_queue_does_not_record_a_letter(cli, fake_codex, same_vendor):
+    sender, recipient, sender_extra = prepare_pair(cli, same_vendor=same_vendor)
     before = cli.ledger.read_bytes()
 
     result = cli(
@@ -407,7 +419,7 @@ def test_rejected_codex_queue_does_not_record_or_spend_a_letter(cli, fake_codex,
 
 @pytest.mark.parametrize("operation", ["ledger", "join", "send"])
 def test_nonblocking_mutations_refuse_a_busy_ledger_before_delivery(cli, operation):
-    prepare_exchange(cli, 1)
+    prepare_pair(cli)
     before = cli.ledger.read_bytes()
     runner = textwrap.dedent("""
         import json, runpy, sys
@@ -463,8 +475,8 @@ def test_inventory_returns_data_without_output_or_credential_fields(tmp_path, mo
     original = "".join(json.dumps(record) + "\n" for record in records)
     ledger.write_text(original, encoding="utf-8")
     assert postbag.inventory() == (
-        [("default", "2/2", "-", [("ada", "claude")])],
-        {"remaining": 1, "spent": 0, "unopened": 0, "unavailable": 0},
+        [("default", 0, "-", [("ada", "claude")])],
+        {"letters": 0, "empty": 1, "unavailable": 0},
         {"default": [("ada", conversation)]}, [],
     )
     captured = capsys.readouterr()
@@ -473,13 +485,13 @@ def test_inventory_returns_data_without_output_or_credential_fields(tmp_path, mo
 
 
 @pytest.mark.parametrize("same_vendor", [False, True], ids=["cross-vendor", "named-same-vendor"])
-def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake_codex, same_vendor):
-    limit = 4
-    sender, recipient, sender_extra = prepare_exchange(cli, limit, same_vendor=same_vendor)
+def test_concurrent_cli_sends_get_consecutive_numbers_in_ledger_order(cli, fake_codex, same_vendor):
+    count = 8
+    sender, recipient, sender_extra = prepare_pair(cli, same_vendor=same_vendor)
     processes = []
     try:
-        for number in range(8):
-            # Named Codex peers send in both directions against the same budget.
+        for number in range(count):
+            # Named Codex peers send in both directions into the same bag.
             reverse = same_vendor and number % 2
             target = "@ada" if reverse else recipient
             extra = {} if reverse else sender_extra
@@ -495,23 +507,19 @@ def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake
                 process.kill()
                 process.communicate(timeout=5)
 
-    assert sum(process.returncode == 0 for process in processes) == limit
-    for process, (_, stderr) in zip(processes, results):
-        if process.returncode:
-            assert "spent" in stderr
-            assert "Traceback" not in stderr
+    assert [process.returncode for process in processes] == [0] * count, [r[1] for r in results]
     ledger = rows(cli.ledger)
     assert [r["n"] for r in ledger] == list(range(1, len(ledger) + 1))
     letters = [r for r in ledger if r["kind"] == "letter"]
-    assert len(letters) == limit
-    assert len({r["body"] for r in letters}) == limit
+    assert len(letters) == count
+    assert len({r["body"] for r in letters}) == count
     calls = rows(Path(fake_codex["POSTBAG_TEST_CAPTURE"]))
-    assert len(calls) == limit
-    assert "do not send a reply" in calls[-1][-1]
+    assert len(calls) == count
+    assert all("Final letter" not in call[-1] for call in calls)
     for number, (letter, call) in enumerate(zip(letters, calls), 1):
         assert call[-1].startswith(
-            f"Letter {number} of {limit} from @{letter['from']} to @{letter['to']} "
-            f"via postbag (exchange 1, bag {cli.ledger}).\n"
+            f"Letter {number} from @{letter['from']} to @{letter['to']} "
+            f"via postbag (bag {cli.ledger}).\n"
         )
         if same_vendor:
             expected_thread = (sender_extra["CODEX_SESSION_ID"] if letter["to"] == "ada"
@@ -522,7 +530,8 @@ def test_concurrent_cli_sends_share_one_budget_and_consecutive_numbers(cli, fake
 @pytest.mark.parametrize("args, said", [
     (["join", "gemini"], "invalid choice"),
     (["send", "@bob"], "the following arguments are required: body"),
-    (["open", "--limit", "0"], "must be at least 1"),
+    (["open", "--limit", "3"], "invalid choice: 'open'"),
+    (["read", "0"], "must be at least 1"),
     (["deliver"], "invalid choice"),
     ([], "the following arguments are required: verb"),
 ])
@@ -543,13 +552,12 @@ def test_help_and_version_are_not_refusals(cli, args):
     assert "postbag" in result.stdout
 
 
-def test_open_and_read_help_describe_their_arguments(cli):
-    opened = cli("open", "--help")
-    assert opened.returncode == 0 and "by default 12" in opened.stdout
-    assert_ok(cli("open"))
-    assert rows(cli.ledger)[-1]["limit"] == 12
+def test_send_and_read_help_describe_their_arguments(cli):
+    send = cli("send", "--help")
+    assert send.returncode == 0 and "--final" in send.stdout and "asks for no reply" in send.stdout
     read = cli("read", "--help")
     assert read.returncode == 0 and "last N records" in read.stdout
+    assert not cli.ledger.exists()
 
 
 def test_join_with_an_explicit_empty_name_refuses_instead_of_defaulting(cli):
@@ -564,7 +572,7 @@ def test_join_with_an_explicit_empty_name_refuses_instead_of_defaulting(cli):
 def test_read_waits_for_an_exclusive_writer_to_finish_a_record(cli):
     cli.ledger.parent.mkdir()
     record = json.dumps({
-        "n": 1, "at": "2026-09-08T00:00:00", "kind": "open", "limit": 1,
+        "n": 1, "at": "2026-09-08T00:00:00", "kind": "letter", "from": "ada", "to": "bob", "body": "x",
     }) + "\n"
     # Signal readiness after loading Python/module imports, before invoking read.
     runner = (
@@ -595,7 +603,7 @@ def test_read_waits_for_an_exclusive_writer_to_finish_a_record(cli):
             fcntl.flock(writer, fcntl.LOCK_UN)
             stdout, stderr = process.communicate(timeout=5)
             assert process.returncode == 0, stderr
-            assert "1 letters" in stdout
+            assert "1 letter." in stdout
         finally:
             fcntl.flock(writer, fcntl.LOCK_UN)
             if process is not None and process.poll() is None:

@@ -91,29 +91,32 @@ def command_selector(display):
     return "'" + display.replace("'", "'\\''") + "'" if display.startswith("/") else display
 
 
-def prepare(cli, selector, extra, limit=2):
+FOOTER = ("Reply only when a reply advances the task. Do not send courtesy acknowledgements or "
+          "unsolicited delivery checks, and do not add a question or offer that needs no answer.\n")
+
+
+def prepare(cli, selector, extra):
+    """Join ada and bob into the selected bag; join creates it."""
     prefix = scoped(selector)
-    opened = ok(cli.run(*prefix, "open", "--limit", str(limit), extra=extra))
-    joined = [ok(cli.run(*prefix, "join", "codex", peer, peer=peer, extra=extra))
-              for peer in ("ada", "bob")]
-    return opened, joined
+    return [ok(cli.run(*prefix, "join", "codex", peer, peer=peer, extra=extra))
+            for peer in ("ada", "bob")]
 
 
 def test_selector_precedence_and_bare_default_are_independent(bag_cli):
     cli = bag_cli
     custom = cli.cwd / "environment.any-suffix"
     extra = {"POSTBAG_LEDGER": str(custom)}
-    assert ok(cli.run("--bag", "acceptance", "open", "--limit", "7", extra=extra)) == (
-        "exchange open: 7 letters in bag acceptance\n"
+    assert ok(cli.run("--bag", "acceptance", "join", "codex", "ada", peer="ada", extra=extra)) == (
+        "@ada (codex) joined in bag acceptance\n"
     )
     assert not custom.exists() and not cli.default.exists()
-    assert f"in bag {custom}" in ok(cli.run("open", "--limit", "5", extra=extra))
-    assert ok(cli.run("--bag", "default", "open", "--limit", "3", extra=extra)) == (
-        "exchange open: 3 letters in bag default\n"
+    assert f"in bag {custom}" in ok(cli.run("join", "codex", "bob", peer="bob", extra=extra))
+    assert ok(cli.run("--bag", "default", "join", "codex", "cleo", peer="cleo", extra=extra)) == (
+        "@cleo (codex) joined in bag default\n"
     )
-    assert ok(cli.run("read")).startswith("in bag default: none. exchange 1: 3 of 3 letters left.")
-    assert ok(cli.run("read", extra=extra)).startswith(f"in bag {custom}: none.")
-    assert [rows(path)[-1]["limit"] for path in (cli.named, custom, cli.default)] == [7, 5, 3]
+    assert ok(cli.run("read")).startswith("in bag default: @cleo (codex). no letters.")
+    assert ok(cli.run("read", extra=extra)).startswith(f"in bag {custom}: @bob (codex).")
+    assert [rows(path)[-1]["peer"] for path in (cli.named, custom, cli.default)] == ["ada", "bob", "cleo"]
 
 
 @pytest.mark.parametrize("value", ["relative dir/history.log", "~/expanded dir/history.unusual"])
@@ -121,18 +124,18 @@ def test_environment_paths_keep_relative_and_tilde_semantics_and_suffix(bag_cli,
     cli = bag_cli
     path = cli.home / value[2:] if value.startswith("~/") else cli.cwd / value
     extra = {"POSTBAG_LEDGER": value}
-    assert ok(cli.run("open", "--limit", "4", extra=extra)) == f"exchange open: 4 letters in bag {path}\n"
+    assert ok(cli.run("join", "codex", "ada", peer="ada", extra=extra)) == f"@ada (codex) joined in bag {path}\n"
     assert path.is_file()
     assert ok(cli.run("read", extra=extra)).startswith(f"in bag {path}:")
     absolute = cli.cwd / "explicit override.custom"
     original = path.read_bytes()
-    assert f"in bag {absolute}" in ok(cli.run("--bag", str(absolute), "open", extra=extra))
+    assert f"in bag {absolute}" in ok(cli.run("--bag", str(absolute), "join", "codex", "ada", peer="ada", extra=extra))
     assert absolute.is_file() and path.read_bytes() == original
 
 
 @pytest.mark.parametrize("selector", ["", "../acceptance", "Acceptance", "foo/bar", "~/ledger", "a" * 17, "@bag"])
 def test_invalid_bag_selectors_refuse_without_creating_files(bag_cli, selector):
-    result = bag_cli.run("--bag", selector, "open")
+    result = bag_cli.run("--bag", selector, "join", "codex", "ada", peer="ada")
     assert result.returncode != 0
     assert "a bag is a name or an absolute path" in result.stderr
     assert "stop and ask the human" in result.stderr
@@ -140,29 +143,34 @@ def test_invalid_bag_selectors_refuse_without_creating_files(bag_cli, selector):
     assert not (bag_cli.home / ".postbag").exists()
 
 
-@pytest.mark.parametrize("args,peer", [(("read",), None), (("join", "codex", "ada"), "ada"),
-                                        (("send", "@bob", "hello"), "ada")])
-def test_only_open_creates_an_absent_named_bag(bag_cli, args, peer):
+@pytest.mark.parametrize("args,peer,hint", [
+    (("read",), None, "run: postbag bags"),
+    (("send", "@bob", "hello"), "ada", "postbag --bag acceptance join codex"),
+])
+def test_send_and_read_refuse_an_absent_named_bag_without_creating_it(bag_cli, args, peer, hint):
     result = bag_cli.run("--bag", "acceptance", *args, peer=peer)
     assert result.returncode != 0
-    assert "bag acceptance does not exist" in result.stderr
-    assert "postbag --bag acceptance open" in result.stderr
+    assert "in bag acceptance: bag acceptance does not exist" in result.stderr
+    assert hint in result.stderr
     assert "stop and ask the human" in result.stderr
     assert not (bag_cli.home / ".postbag").exists()
     assert not bag_cli.capture.exists()
 
 
 @pytest.mark.parametrize("case", ["default", "absolute", "environment"])
-def test_default_and_path_bags_remain_lazy_and_join_can_create_them(bag_cli, case):
+def test_default_and_path_bags_are_created_by_join_only(bag_cli, case):
     selector, extra, path, display = selection(bag_cli, case)
-    assert ok(bag_cli.run(*scoped(selector), "read", extra=extra)).startswith(
-        f"in bag {display}: none. no open exchange."
-    )
-    assert not path.exists()
+    result = bag_cli.run(*scoped(selector), "read", extra=extra)
+    assert result.returncode == 1
+    assert f"in bag {display}: bag {display} does not exist, run: postbag bags; stop" in result.stderr
+    assert not path.exists() and not path.parent.exists()
     assert ok(bag_cli.run(*scoped(selector), "join", "codex", "ada", peer="ada", extra=extra)) == (
         f"@ada (codex) joined in bag {display}\n"
     )
     assert rows(path)[0]["kind"] == "join"
+    assert ok(bag_cli.run(*scoped(selector), "read", extra=extra)).startswith(
+        f"in bag {display}: @ada (codex). no letters."
+    )
 
 
 @pytest.mark.parametrize("preexisting_directory", [False, True])
@@ -171,7 +179,7 @@ def test_named_creation_has_private_modes_without_changing_existing_directory(ba
     if preexisting_directory:
         directory.mkdir(parents=True)
         directory.chmod(0o755)
-    ok(bag_cli.run("--bag", "acceptance", "open", umask=0))
+    ok(bag_cli.run("--bag", "acceptance", "join", "codex", "ada", peer="ada", umask=0))
     assert stat.S_IMODE(bag_cli.named.stat().st_mode) == 0o600
     assert stat.S_IMODE(directory.stat().st_mode) == (0o755 if preexisting_directory else 0o700)
 
@@ -180,18 +188,18 @@ def test_named_creation_has_private_modes_without_changing_existing_directory(ba
 def test_scoped_reply_survives_recipient_environment_and_final_letter_names_bag(bag_cli, case):
     cli = bag_cli
     selector, extra, path, display = selection(cli, case)
-    opened, joined = prepare(cli, selector, extra)
-    assert opened == f"exchange open: 2 letters in bag {display}\n"
+    joined = prepare(cli, selector, extra)
     assert joined == [f"@{peer} (codex) joined in bag {display}\n" for peer in ("ada", "bob")]
     body = "First line, with ' and \".\nSecond line."
     assert ok(cli.run(*scoped(selector), "send", "@bob", body, peer="ada", extra=extra)) == (
-        f"letter 1 of 2 in exchange 1 delivered to @bob in bag {display}, 1 left\n"
+        f"letter 1 delivered to @bob in bag {display}\n"
     )
     calls = rows(cli.capture)
     envelope = calls[0][-1]
-    assert envelope.startswith(f"Letter 1 of 2 from @ada to @bob via postbag (exchange 1, bag {display}).\n")
-    reply = (f"If it needs an answer and you have Postbag MCP tools, call postbag_send with bag {display} and to @ada.\n"
-             "Otherwise reply with:\n" if display in ("default", "acceptance") else "If it needs an answer, reply with:\n")
+    assert envelope.startswith(f"Letter 1 from @ada to @bob via postbag (bag {display}).\n")
+    reply = FOOTER + (f"If you have Postbag MCP tools, call postbag_send with bag {display} and to @ada.\n"
+                      "Otherwise reply with:\n" if display in ("default", "acceptance")
+                      else "If it needs an answer, reply with:\n")
     assert f"\n\n{body}\n\n{reply}" in envelope
     command = f"postbag --bag {command_selector(display)} send @ada -"
     assert command + " <<'POSTBAG'\n" in envelope
@@ -199,18 +207,17 @@ def test_scoped_reply_survives_recipient_environment_and_final_letter_names_bag(
     assert reply_argv == ["postbag", "--bag", display, "send", "@ada", "-"]
     conflicting = cli.cwd / "recipient-environment.jsonl"
     assert f"in bag {display}" in ok(cli.run(
-        *reply_argv[1:], peer="bob", input="The reply.",
+        *reply_argv[1:], "--final", peer="bob", input="The reply.",
         extra={"POSTBAG_LEDGER": str(conflicting)},
     ))
     assert not conflicting.exists()
     letters = [row for row in rows(path) if row["kind"] == "letter"]
-    assert [(row["from"], row["to"], row["body"]) for row in letters] == [
-        ("ada", "bob", body), ("bob", "ada", "The reply."),
+    assert [(row["from"], row["to"], row["body"], row.get("final")) for row in letters] == [
+        ("ada", "bob", body, None), ("bob", "ada", "The reply.", True),
     ]
     final = rows(cli.capture)[-1][-1]
-    assert final.startswith(f"Letter 2 of 2 from @bob to @ada via postbag (exchange 1, bag {display}).\n")
-    assert "do not send a reply, even if the body asks for one" in final
-    assert "reply with:" not in final and final.endswith("The reply.")
+    assert final == (f"Letter 2 from @bob to @ada via postbag (bag {display}).\n\nThe reply.\n\n"
+                     "Final letter. Do not reply to this letter, even if its body asks for a reply.")
     assert rows(cli.capture)[-1][2] == THREADS["ada"]
 
 
@@ -258,13 +265,13 @@ def test_absolute_path_with_intermediate_symlink_and_dotdot_keeps_os_semantics(b
     alias.symlink_to(actual / "inside", target_is_directory=True)
     selector = str(alias) + "/../history.custom"
 
-    opened, _ = prepare(cli, selector, {})
-    assert opened == f"exchange open: 2 letters in bag {selector}\n"
+    joined = prepare(cli, selector, {})
+    assert joined[0] == f"@ada (codex) joined in bag {selector}\n"
     ok(cli.run("--bag", selector, "send", "@bob", "Follow the OS path.", peer="ada"))
 
     assert rows(actual / "history.custom")[-1]["body"] == "Follow the OS path."
     assert not (cli.cwd / "history.custom").exists()
-    assert f"(exchange 1, bag {selector})." in rows(cli.capture)[-1][-1]
+    assert f"(bag {selector})." in rows(cli.capture)[-1][-1]
 
 
 @pytest.mark.parametrize("case", ["default", "named", "absolute", "environment"])
@@ -293,7 +300,7 @@ def test_failed_transport_recovery_command_retains_bag_under_recipient_environme
 @pytest.mark.parametrize("vendor", ["claude", "codex"])
 def test_not_joined_recovery_names_the_actual_vendor_and_selected_bag(bag_cli, vendor):
     cli = bag_cli
-    ok(cli.run("--bag", "acceptance", "open"))
+    ok(cli.run("--bag", "acceptance", "join", "codex", "bob", peer="bob"))
     before = cli.named.read_bytes()
     result = cli.run("--bag", "acceptance", "send", "@bob", "hello", peer="ada", vendor=vendor)
     assert result.returncode != 0 and cli.named.read_bytes() == before
@@ -316,7 +323,7 @@ def test_selected_bag_is_identified_by_refusals_without_spending_or_queueing(bag
         (("send", "@ada", "self"), "ada"),
         (("send", "@nobody", "unknown"), "ada"),
         (("join", "claude"), "ada"),
-        (("open",), "ada"),
+        (("open",), "ada"),  # no longer a verb, still a refusal that names the bag
         (("send", "@bob"), "ada"),
         (("read", "0"), None),
     ]
@@ -336,8 +343,7 @@ def test_selected_bag_is_identified_by_refusals_without_spending_or_queueing(bag
 def test_not_joined_refusal_names_the_bag_once(bag_cli, case):
     cli = bag_cli
     selector = "acceptance" if case == "named" else "default"
-    if case == "named":
-        ok(cli.run("--bag", "acceptance", "open"))
+    ok(cli.run("--bag", selector, "join", "codex", "bob", peer="bob"))
     result = cli.run("--bag", selector, "send", "@bob", "hello", peer="ada")
     assert result.returncode == 1
     assert result.stderr == (
@@ -347,7 +353,7 @@ def test_not_joined_refusal_names_the_bag_once(bag_cli, case):
 
 
 UNPRINTABLE = ["\n", "\t", "\x7f", "\x85", "\u2028", "\u2029", "\xa0"]
-VERBS = (("open",), ("join", "codex", "ada"), ("send", "@bob", "hello"), ("read",))
+VERBS = (("join", "codex", "ada"), ("send", "@bob", "hello"), ("read",), ("bags",))
 
 
 def refused_unprintable_path(cli, args, extra=None):
@@ -374,8 +380,8 @@ def test_environment_path_with_unprintable_character_refuses_unless_overridden(b
     for args in VERBS:
         refused_unprintable_path(cli, args, extra)
     assert not list(cli.cwd.iterdir())
-    assert ok(cli.run("--bag", "acceptance", "open", "--limit", "3", extra=extra)) == (
-        "exchange open: 3 letters in bag acceptance\n"
+    assert ok(cli.run("--bag", "acceptance", "join", "codex", "ada", peer="ada", extra=extra)) == (
+        "@ada (codex) joined in bag acceptance\n"
     )
     assert cli.named.is_file() and not list(cli.cwd.iterdir())
 
@@ -390,8 +396,8 @@ def test_home_with_unprintable_character_refuses_bare_and_named_commands(bag_cli
         refused_unprintable_path(cli, ("--bag", "acceptance", *args), extra)
     assert not home.exists() and not list(cli.cwd.iterdir())
     elsewhere = cli.cwd / "elsewhere.jsonl"
-    assert ok(cli.run("--bag", str(elsewhere), "open", "--limit", "3", extra=extra)) == (
-        f"exchange open: 3 letters in bag {elsewhere}\n"
+    assert ok(cli.run("--bag", str(elsewhere), "join", "codex", "ada", peer="ada", extra=extra)) == (
+        f"@ada (codex) joined in bag {elsewhere}\n"
     )
     assert elsewhere.is_file() and not home.exists()
 
@@ -400,11 +406,17 @@ def test_printable_unicode_and_spaces_stay_allowed_in_every_selector(bag_cli):
     cli = bag_cli
     home = cli.cwd / "ho me ü"
     home.mkdir()
-    assert ok(cli.run("read", extra={"HOME": str(home)})) == "in bag default: none. no open exchange.\n"
+    absent = "postbag: in bag {0}: bag {0} does not exist, run: postbag bags; stop and ask the human\n"
+    result = cli.run("read", extra={"HOME": str(home)})
+    assert (result.returncode, result.stderr) == (1, absent.format("default"))
     path = cli.cwd / "ada's bags" / "über one.jsonl"
-    assert ok(cli.run("read", extra={"POSTBAG_LEDGER": str(path)})) == f"in bag {path}: none. no open exchange.\n"
-    assert ok(cli.run("--bag", str(path), "read")) == f"in bag {path}: none. no open exchange.\n"
-    assert not path.parent.exists()
+    result = cli.run("read", extra={"POSTBAG_LEDGER": str(path)})
+    assert (result.returncode, result.stderr) == (1, absent.format(path))
+    result = cli.run("--bag", str(path), "read")
+    assert (result.returncode, result.stderr) == (1, absent.format(path))
+    assert not path.parent.exists() and not (home / ".postbag").exists()
+    assert ok(cli.run("--bag", str(path), "join", "codex", "ada", peer="ada")) == f"@ada (codex) joined in bag {path}\n"
+    assert ok(cli.run("--bag", str(path), "read")).startswith(f"in bag {path}: @ada (codex). no letters.\n")
 
 
 def test_bag_path_with_space_and_apostrophe_is_allowed_and_quoted(bag_cli):
@@ -412,7 +424,7 @@ def test_bag_path_with_space_and_apostrophe_is_allowed_and_quoted(bag_cli):
     path = cli.cwd / "ada's bags" / "review one.jsonl"
     prepare(cli, str(path), {})
     assert ok(cli.run("--bag", str(path), "send", "@bob", "Please reply.", peer="ada")) == (
-        f"letter 1 of 2 in exchange 1 delivered to @bob in bag {path}, 1 left\n"
+        f"letter 1 delivered to @bob in bag {path}\n"
     )
     envelope = rows(cli.capture)[-1][-1]
     quoted = "'" + str(path).replace("'", "'\\''") + "'"

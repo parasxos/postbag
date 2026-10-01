@@ -37,20 +37,18 @@ def register(bag, session, vendor, identity, name):
     return fields
 
 
-def exchange(bag, session, limit=5):
-    session()
-    bag.open_exchange(limit)
+def ledger_state(bag):
+    """The records, or None for a bag that does not exist: a refusal must not create one."""
+    return bag.records() if bag.ledger_path().exists() else None
 
 
 def refused_without_effect(bag, operation):
-    before = bag.records()
-    budget = bag.budget()
+    before = ledger_state(bag)
     knocks = len(bag.KNOCKED)
     with pytest.raises(SystemExit) as error:
         operation()
     assert "stop and ask the human" in str(error.value)
-    assert bag.records() == before
-    assert bag.budget() == budget
+    assert ledger_state(bag) == before
     assert len(bag.KNOCKED) == knocks
     return str(error.value)
 
@@ -59,7 +57,6 @@ def refused_without_effect(bag, operation):
 def test_same_vendor_pair_routes_both_ways_by_name(bag, session, vendor):
     ada = register(bag, session, vendor, "one", "ada")
     bob = register(bag, session, vendor, "two", "bob")
-    exchange(bag, session)
 
     session(vendor, "one")
     bag.send("@bob", "first letter")
@@ -88,7 +85,6 @@ def test_codex_siblings_share_a_root_but_keep_distinct_concrete_doors(bag, sessi
     for peer in threads:
         select(peer)
         bag.join("codex", peer)
-    exchange(bag, session)
     for sender, recipient in [("ada", "bob"), ("bob", "ada")]:
         select(sender)
         bag.send(recipient, "a letter between concrete threads")
@@ -123,6 +119,7 @@ def test_historical_uppercase_codex_uuid_matches_without_rewriting_history(bag, 
                 "peer": "ada", "vendor": "codex", "thread": thread}
     bag.ledger_path().parent.mkdir()
     bag.ledger_path().write_text(json.dumps(original) + "\n", encoding="utf-8")
+    bag.ledger_path().chmod(0o600)
     session("codex", thread=thread)
     assert bag.Snapshot(bag.records()).sender() == "ada"
     monkeypatch.setenv("CODEX_THREAD_ID", thread.lower())
@@ -154,7 +151,6 @@ def test_join_receipt_exposes_rename_and_takeover_without_door_fields(bag, sessi
 def test_invalid_concrete_codex_thread_never_falls_back_to_root(bag, session, monkeypatch, thread):
     register(bag, session, "codex", "root", "ada")
     register(bag, session, "codex", "other", "bob")
-    exchange(bag, session)
     session("codex", "root")
     monkeypatch.setenv("CODEX_THREAD_ID", thread)
     for operation in (lambda: bag.join("codex", "ada"),
@@ -166,13 +162,11 @@ def test_invalid_concrete_codex_thread_never_falls_back_to_root(bag, session, mo
         assert error.value.submission_state == "not_submitted"
         assert bag.records() == before
         assert bag.KNOCKED == []
-    refused_without_effect(bag, lambda: bag.open_exchange(5))
 
 
 def test_rename_releases_old_name_and_points_recipient_to_new_name(bag, session, capsys):
     ada = register(bag, session, "codex", "one", "ada")
     register(bag, session, "codex", "two", "bob")
-    exchange(bag, session)
     session("codex", "one")
     capsys.readouterr()
     bag.join("codex", "cleo")
@@ -192,7 +186,6 @@ def test_rename_releases_old_name_and_points_recipient_to_new_name(bag, session,
 def test_name_takeover_displaces_sender_and_reroutes_replies(bag, session, capsys):
     register(bag, session, "codex", "one", "ada")
     register(bag, session, "claude", "two", "bob")
-    exchange(bag, session)
     session("codex", "one")
     bag.send("bob", "a question before the handover")
     capsys.readouterr()
@@ -216,7 +209,6 @@ def test_released_bindings_never_revive_after_rename_and_takeover(bag, session):
     register(bag, session, "codex", "one", "bob")
     register(bag, session, "codex", "two", "bob")
     current = register(bag, session, "codex", "two", "cleo")
-    exchange(bag, session)
 
     assert bag.door("cleo")["thread"] == current["thread"]
     for released in ("ada", "bob"):
@@ -237,7 +229,6 @@ def test_rename_into_an_occupied_name_releases_both_previous_bindings(bag, sessi
     original = register(bag, session, "codex", "one", "ada")
     register(bag, session, "codex", "two", "bob")
     register(bag, session, "claude", "three", "cleo")
-    exchange(bag, session)
     session("codex", "one")
     bag.join("codex", "bob")
 
@@ -253,7 +244,6 @@ def test_rename_into_an_occupied_name_releases_both_previous_bindings(bag, sessi
 def test_rejoining_the_same_binding_does_not_make_sender_ambiguous(bag, session):
     register(bag, session, "codex", "one", "ada")
     register(bag, session, "codex", "two", "bob")
-    exchange(bag, session)
     session("codex", "one")
     for _ in range(3):
         bag.join("codex", "ada")
@@ -263,9 +253,8 @@ def test_rejoining_the_same_binding_does_not_make_sender_ambiguous(bag, session)
 
 
 @pytest.mark.parametrize("recipient", ["ada", "@ada"])
-def test_send_to_own_name_is_a_refusal_without_spending(bag, session, recipient):
+def test_send_to_own_name_is_a_refusal_without_effect(bag, session, recipient):
     register(bag, session, "codex", "one", "ada")
-    exchange(bag, session)
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send(recipient, "self"))
     assert "@ada is your own name" in error
@@ -273,7 +262,6 @@ def test_send_to_own_name_is_a_refusal_without_spending(bag, session, recipient)
 
 def test_sender_must_have_joined_even_with_complete_vendor_environment(bag, session):
     register(bag, session, "codex", "two", "bob")
-    exchange(bag, session)
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "not registered"))
     assert f"this session has not joined, run {expected_bag_command('join codex')}" in error
@@ -287,8 +275,6 @@ def test_a_displaced_sender_whose_name_nobody_holds_learns_it_was_released(bag, 
     bag.join("codex", "ada")  # the taker restarted: a new door, and the old taker holds nothing
     session("codex", "three", **taker)
     bag.join("codex", "dana")  # ... then rejoined under another name, so ada is held by the restart
-    session("codex", "four")
-    exchange(bag, session)
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "displaced"))
     assert "your name @ada was taken by the codex door that joined at" in error
@@ -306,7 +292,6 @@ def test_a_displaced_sender_hears_only_released_when_the_taker_holds_nothing(bag
     register(bag, session, "codex", "three", "ada")   # took ada from door one
     register(bag, session, "codex", "three", "cleo")  # released ada
     register(bag, session, "codex", "four", "cleo")   # took cleo, so the taker of ada holds nothing
-    exchange(bag, session)
     session("codex", "one")
     error = refused_without_effect(bag, lambda: bag.send("bob", "displaced"))
     assert "your name @ada was released; stop and ask the human" in error
@@ -314,7 +299,6 @@ def test_a_displaced_sender_hears_only_released_when_the_taker_holds_nothing(bag
 
 def test_a_shell_inside_two_unjoined_sessions_is_told_both_joins(bag, session, monkeypatch):
     register(bag, session, "claude", "two", "bob")
-    exchange(bag, session)
     session("codex", "one")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/postbag-test-nine.sock")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "fake-token-nine")
@@ -326,7 +310,6 @@ def test_two_matching_vendor_identities_refuse_instead_of_picking_one(bag, sessi
     ada = register(bag, session, "codex", "one", "ada")
     register(bag, session, "claude", "two", "bob")
     register(bag, session, "codex", "three", "cleo")
-    exchange(bag, session)
     session("claude", "two")
     monkeypatch.setenv("CODEX_SESSION_ID", ada["thread"])
 
@@ -341,7 +324,6 @@ def test_two_matching_vendor_identities_refuse_instead_of_picking_one(bag, sessi
 def test_unregistered_other_vendor_environment_does_not_hide_the_one_match(bag, session, monkeypatch):
     register(bag, session, "codex", "one", "ada")
     register(bag, session, "codex", "two", "bob")
-    exchange(bag, session)
     session("codex", "one")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/unregistered-postbag-test.sock")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "unregistered-fake-token")
@@ -359,7 +341,6 @@ def test_changed_door_fields_require_rejoin_and_displace_old_identity(
 ):
     register(bag, session, vendor, "one", "ada")
     register(bag, session, vendor, "two", "bob")
-    exchange(bag, session)
     session(vendor, "one", **{field: replacement})
     refused_without_effect(bag, lambda: bag.send("bob", "changed field without join"))
     bag.join(vendor, "ada")
@@ -374,7 +355,6 @@ def test_changed_door_fields_require_rejoin_and_displace_old_identity(
 def test_unrelated_environment_changes_are_not_door_identity(bag, session, monkeypatch, vendor):
     register(bag, session, vendor, "one", "ada")
     register(bag, session, vendor, "two", "bob")
-    exchange(bag, session)
     session(vendor, "one")
     monkeypatch.setenv(f"{vendor.upper()}_UNRELATED_TEST_VALUE", "changed")
     bag.send("bob", "defined door fields still match")
@@ -409,25 +389,24 @@ def test_valid_name_boundaries_are_accepted(bag, session, name):
     assert bag.door(name)["peer"] == name
 
 
-def test_three_registered_peers_are_experimental_and_share_one_budget(bag, session, capsys):
+def test_three_registered_peers_are_experimental_and_number_letters_in_one_sequence(bag, session, capsys):
     register(bag, session, "codex", "one", "ada")
     register(bag, session, "claude", "two", "bob")
     register(bag, session, "codex", "three", "cleo")
-    exchange(bag, session, 3)
     capsys.readouterr()
     bag.read(None)
     output = capsys.readouterr().out
     assert "experimental" in output.lower()
     assert all(f"@{name}" in output for name in ("ada", "bob", "cleo"))
 
-    for vendor, identity, recipient in [
+    for number, (vendor, identity, recipient) in enumerate([
         ("codex", "one", "bob"), ("claude", "two", "cleo"), ("codex", "three", "ada"),
-    ]:
+    ], 1):
         session(vendor, identity)
-        bag.send(recipient, "one shared letter")
-    assert bag.budget() == 0
+        assert bag.send(recipient, "one shared sequence")["letter"] == number
+    assert bag.Snapshot(bag.records()).letters == 3
     assert len(bag.KNOCKED) == 3
-    refused_without_effect(bag, lambda: bag.send("bob", "shared budget spent"))
+    assert bag.send("bob", "a fourth, nothing is spent")["letter"] == 4
 
 
 def test_legacy_doors_participate_in_replay_without_rewriting_history(bag, session):
@@ -441,6 +420,7 @@ def test_legacy_doors_participate_in_replay_without_rewriting_history(bag, sessi
     bag.ledger_path().parent.mkdir()
     original = "".join(json.dumps(record) + "\n" for record in legacy)
     bag.ledger_path().write_text(original, encoding="utf-8")
+    bag.ledger_path().chmod(0o600)
     assert bag.door("claude")["token"] == ada["token"]
     assert bag.door("codex")["thread"] == bob["thread"]
     assert bag.ledger_path().read_text(encoding="utf-8") == original
@@ -461,7 +441,6 @@ def test_legacy_doors_participate_in_replay_without_rewriting_history(bag, sessi
 def test_every_refusal_and_announcement_carries_only_the_stop_suffix_semicolon(bag, session, capsys, monkeypatch):
     register(bag, session, "codex", "one", "ada")
     register(bag, session, "claude", "two", "bob")
-    exchange(bag, session)
     register(bag, session, "codex", "three", "ada")
     capsys.readouterr()
     register(bag, session, "codex", "three", "cleo")

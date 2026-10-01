@@ -299,7 +299,7 @@ def test_missing_resume_ids_are_explained_once_without_repeating_peers(inventory
     for peer in ("ada", "cleo", "dora"):
         assert text.count("@" + peer) == 1
     if columns == 120:
-        assert re.search(r"Bag\s+Letters left\s+Last letter\s+Registered peers", text)
+        assert re.search(r"Bag\s+Letters\s+Last letter\s+Registered peers", text)
     elif columns == 40:
         assert "Last letter:" in text
 
@@ -323,7 +323,7 @@ def test_partial_resume_ids_add_only_copyable_commands_and_one_missing_count(inv
     for peer in ("cleo", "eve", "bob"):
         assert text.count("@" + peer) == 1
     if columns == 120:
-        assert re.search(r"Bag\s+Letters left\s+Last letter\s+Registered peers", text)
+        assert re.search(r"Bag\s+Letters\s+Last letter\s+Registered peers", text)
     lines = text.splitlines()
     default_row = next(i for i, line in enumerate(lines) if re.match(r"^default(?:\s|$)", line))
     review_row = next(i for i, line in enumerate(lines) if re.match(r"^review(?:\s|$)", line))

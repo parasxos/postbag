@@ -7,8 +7,10 @@ import sys
 
 import pytest
 
+import stat
+
 import postbag
-from test_hardening import SCRIPT, cli, fake_codex, prepare_exchange  # noqa: F401 -- subprocess fixture with a private ledger
+from test_hardening import SCRIPT, cli, fake_codex, prepare_pair  # noqa: F401 -- subprocess fixture with a private ledger
 from test_names import session  # noqa: F401
 from test_postbag import bag, be, joined, expected_bag_command, expected_bag_label  # noqa: F401
 
@@ -30,8 +32,6 @@ def test_a_refusal_carries_no_recovery_by_default(joined):
 def test_unjoined_sender_recovery_names_the_one_vendor(bag, be):
     be("codex")
     bag.join("codex")
-    be(None)
-    bag.open_exchange(3)
     be("claude")
     error = refusal(lambda: bag.send("codex", "not joined"))
     assert "this session has not joined" in str(error)
@@ -42,8 +42,6 @@ def test_unjoined_sender_recovery_names_the_one_vendor(bag, be):
 def test_unjoined_sender_inside_two_vendors_leaves_the_vendor_open(bag, session, monkeypatch):
     session("claude", "two")
     bag.join("claude", "bob")
-    session()
-    bag.open_exchange(3)
     session("codex", "one")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/postbag-test-nine.sock")
     monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "fake-token-nine")
@@ -59,8 +57,6 @@ def test_lost_name_recovery_is_a_rejoin(bag, session):
     bag.join("claude", "bob")
     session("codex", "three")
     bag.join("codex", "ada")  # took ada from door one
-    session()
-    bag.open_exchange(3)
     session("codex", "one")
     error = refusal(lambda: bag.send("bob", "displaced"))
     assert "your name @ada was taken" in str(error)
@@ -82,9 +78,6 @@ def test_silent_door_recovery_tells_the_recipient_to_rejoin(bag, be, named):
     bag.join("codex", to)
     be("claude")
     bag.join("claude")
-    be(None)
-    bag.open_exchange(3)
-    be("claude")
 
     def closed(door, text):
         raise OSError("door closed")
@@ -96,28 +89,25 @@ def test_silent_door_recovery_tells_the_recipient_to_rejoin(bag, be, named):
                               "vendor": "codex", "name": to}
 
 
-def test_no_exchange_and_spent_exchange_recovery_is_a_human_open(bag, be):
+def test_no_refusal_names_an_open_and_nothing_is_ever_spent(bag, be):
     be("claude")
     bag.join("claude")
     be("codex")
     bag.join("codex")
-    reopen = {"action": "open", "actor": "human", "bag": expected_bag_label()}
-    assert refusal(lambda: bag.send("claude", "before any open")).recovery == reopen
-    be(None)
-    bag.open_exchange(1)
-    be("codex")
-    bag.send("claude", "the only letter")
-    error = refusal(lambda: bag.send("claude", "one too many"))
-    assert "spent" in str(error) and error.recovery == reopen
+    for n in range(1, 15):
+        assert bag.send("claude", f"letter {n} of no limit")["letter"] == n
+    assert not hasattr(postbag, "open_exchange") and not hasattr(postbag, "budget")
 
 
-def test_missing_named_bag_recovery_is_a_human_open(bag, be, tmp_path, monkeypatch):
+def test_join_creates_a_missing_named_bag_with_private_modes(bag, be, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     be("claude")
-    error = refusal(lambda: bag.main(["--bag", "acceptance", "join", "claude"]))
-    assert "bag acceptance does not exist" in str(error)
-    assert error.recovery == {"action": "open", "actor": "human", "bag": "acceptance"}
-    assert not (tmp_path / ".postbag").exists()
+    bag.main(["--bag", "acceptance", "join", "claude"])
+    path = tmp_path / ".postbag" / "bags" / "acceptance.jsonl"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(path.parent.parent.stat().st_mode) == 0o700
+    assert json.loads(path.read_text())["peer"] == "claude"
 
 
 def test_busy_ledger_recovery_is_a_read_and_says_so(joined):
@@ -151,11 +141,12 @@ def test_a_legacy_ledger_with_a_surrogate_body_still_reads_inventories_joins_and
             {"n": 2, "at": "2026-09-08T00:00:01", "kind": "letter", "from": "ada", "to": "bob", "body": "a\udcffb"}]
     original = "".join(json.dumps(row) + "\n" for row in rows)
     bag.ledger_path().write_text(original, encoding="utf-8")
+    bag.ledger_path().chmod(0o600)
     assert [rec["body"] for rec in bag.records() if rec["kind"] == "letter"] == ["a\udcffb"]
-    assert bag.budget() == 2
+    assert bag.Snapshot(bag.records()).letters == 1
     listed, counts, _, problems = bag.inventory()
-    assert problems == [] and counts["remaining"] == 1
-    assert listed[-1][:2] == (expected_bag_label(), "2/3")
+    assert problems == [] and counts["letters"] == 1
+    assert listed[-1][:2] == (expected_bag_label(), 1)
     be("codex")
     bag.join("codex")
     be("claude")
@@ -170,7 +161,7 @@ def test_a_legacy_ledger_with_a_surrogate_body_still_reads_inventories_joins_and
 
 
 def test_cli_stdin_with_undecodable_bytes_is_refused_before_any_door(cli, fake_codex):
-    sender, recipient, extra = prepare_exchange(cli, 1)
+    sender, recipient, extra = prepare_pair(cli)
     before = cli.ledger.read_bytes()
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "send", recipient, "-"],
@@ -208,7 +199,7 @@ def test_a_send_that_fails_before_the_record_is_written_leaves_no_record(joined,
 
 def test_fsync_failure_after_the_record_landed_says_to_inspect_the_bag(joined, monkeypatch):
     before = joined.records()
-    assert joined.budget() == 3
+    assert joined.Snapshot(before).letters == 0
 
     def unsynced(fd):
         raise OSError("fsync refused")
@@ -224,7 +215,7 @@ def test_fsync_failure_after_the_record_landed_says_to_inspect_the_bag(joined, m
     after = joined.records()
     assert after[:-1] == before and len(after) == len(before) + 1  # exactly one new record
     assert after[-1]["kind"] == "letter" and after[-1]["body"] == "durability unknown"
-    assert joined.budget() == 2  # exactly one budget slot consumed
+    assert joined.Snapshot(after).letters == 1  # exactly one letter numbered
 
 
 # ledger parsing ---------------------------------------------------------------
@@ -241,7 +232,7 @@ def test_an_integer_past_the_digit_limit_is_not_a_record(bag):
         with pytest.raises(postbag.Refusal, match="ledger line 1 is not a record"):
             bag.records()
         sys.set_int_max_str_digits(0)  # with the limit off, the same line is an ordinary record
-        assert bag.budget() == int("9" * 700)
+        assert bag.records()[0]["limit"] == int("9" * 700)
     finally:
         sys.set_int_max_str_digits(previous)
 
@@ -257,9 +248,10 @@ def test_cli_read_of_an_integer_past_the_digit_limit_is_a_refusal_not_a_tracebac
 
 # envelope -----------------------------------------------------------------------
 
+FOOTER = ("Reply only when a reply advances the task. Do not send courtesy acknowledgements or "
+          "unsolicited delivery checks, and do not add a question or offer that needs no answer.\n")
 HEREDOC_TAIL = ("<your reply>\nPOSTBAG\n"
-                "Change POSTBAG at both ends to a word that does not occur in your reply.\n"
-                "Do not reply only to acknowledge.")
+                "Change POSTBAG at both ends to a word that does not occur in your reply.")
 
 
 @pytest.mark.parametrize("label", ["default", "acceptance"])
@@ -267,17 +259,15 @@ def test_the_envelope_offers_the_mcp_tool_for_a_named_or_default_bag(bag, be, tm
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.delenv("POSTBAG_LEDGER")
     select = [] if label == "default" else ["--bag", label]
-    bag.main([*select, "open", "--limit", "3"])
     be("codex")
     bag.main([*select, "join", "codex"])
     be("claude")
     bag.main([*select, "join", "claude"])
     bag.main([*select, "send", "codex", "hello"])
     text = bag.KNOCKED[0][2]
-    assert f"(exchange 1, bag {label})." in text
-    assert text.endswith(
-        "\n\nhello\n\n"
-        f"If it needs an answer and you have Postbag MCP tools, call postbag_send with bag {label} and to @claude.\n"
+    assert text == (
+        f"Letter 1 from @claude to @codex via postbag (bag {label}).\n\nhello\n\n" + FOOTER +
+        f"If you have Postbag MCP tools, call postbag_send with bag {label} and to @claude.\n"
         "Otherwise reply with:\n"
         f"postbag --bag {label} send @claude - <<'POSTBAG'\n" + HEREDOC_TAIL
     )
@@ -287,8 +277,9 @@ def test_the_envelope_for_a_path_bag_keeps_the_shell_reply_only(joined):
     joined.send("codex", "hello")
     text = joined.KNOCKED[0][2]
     assert "postbag_send" not in text and "MCP" not in text
-    assert text.endswith(
-        "\n\nhello\n\nIf it needs an answer, reply with:\n"
+    assert text == (
+        f"Letter 1 from @claude to @codex via postbag (bag {expected_bag_label()}).\n\nhello\n\n" + FOOTER +
+        "If it needs an answer, reply with:\n"
         f"{expected_bag_command('send @claude -')} <<'POSTBAG'\n" + HEREDOC_TAIL
     )
 
@@ -331,7 +322,7 @@ def test_cli_fixture_bags_sees_only_the_tests_own_home(cli, tmp_path):
     empty = cli("bags")
     assert empty.returncode == 0, empty.stderr
     assert empty.stdout.startswith("0 bags found")
-    assert cli("--bag", "review", "open", "--limit", "2").returncode == 0
+    assert cli("--bag", "review", "join", "codex", peer="codex").returncode == 0
     listed = cli("bags")
     assert listed.returncode == 0, listed.stderr
     assert listed.stdout.startswith("1 bag found") and "review" in listed.stdout
@@ -339,7 +330,7 @@ def test_cli_fixture_bags_sees_only_the_tests_own_home(cli, tmp_path):
 
 
 def test_cli_fixture_can_never_launch_the_desktop_codex(cli):
-    sender, recipient, extra = prepare_exchange(cli, 1)
+    sender, recipient, extra = prepare_pair(cli)
     result = cli("send", recipient, "no fake door", peer=sender)
     assert result.returncode == 1
     assert "no codex at" in result.stderr and "set POSTBAG_CODEX" in result.stderr
