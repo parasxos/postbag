@@ -497,6 +497,10 @@ RECOVERY_CASES = {
         [codex_join("bob", THREAD_B)], "default",
         {"action": "join", "actor": "caller", "bag": "default", "vendor": "codex", "name": None},
         "refused"),
+    "name taken": (
+        [codex_join("ada", THREAD_A), codex_join("ada", THREAD_B)], "default",
+        {"action": "join", "actor": "caller", "bag": "default", "vendor": "codex", "name": None},
+        "refused"),
     "unregistered recipient": (
         [codex_join("ada", THREAD_A)], "default",
         {"action": "read", "actor": "caller", "bag": "default"}, "refused"),
@@ -528,6 +532,11 @@ def test_send_refusals_carry_recovery_metadata(wire, tmp_path, case):
             assert refused["data"] == {"recovery": recovery}
             assert refused["data"]["recovery"]["actor"] == recovery["actor"]
             message = refused["message"]
+            expected_reason = {"missing bag": "does not exist", "not joined": "has not joined",
+                               "name taken": "your name @ada was taken by the codex door"}.get(case)
+            if expected_reason:
+                assert expected_reason in message
+                assert not message.startswith("postbag: in bag")
             assert message.endswith(SUFFIX), message
             # Only the recipient may ever be told to join under the recipient's name.
             if 'name="bob"' in message:

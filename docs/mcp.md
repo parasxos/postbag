@@ -108,7 +108,11 @@ Mixed 1.x and 2.0 participants are unsupported and are not negotiated or
 rejected as a pair. A 1.x sender needs a retained `open` record and still
 applies its budget, counting 2.0 letters against it. A 2.0 sender ignores
 that budget. An older reader hides `final`. New bags have no `open` record,
-so 1.x senders refuse there. Upgrade the participants before continuing.
+so 1.x senders refuse there. The 1.4 CLI can create an empty default or
+path-selected ledger during a refused send. Its read of a missing default
+or path-selected ledger reports an empty bag without creating it. A 2.0
+participant may therefore encounter an empty file left by an older sender.
+Upgrade the participants before continuing.
 
 MCP parent and worker code must also match. Internal worker protocol 2 uses
 the private `--worker-v2` entry point, with no fallback. A new worker invoked
@@ -185,8 +189,9 @@ Read's `letters` is the whole bag's recorded letter count. Each read record
 has `n`, `at`, and `kind`. Join records add `peer` and `vendor`. Letter
 records add `from`, `to`, `body`, `letter`, and Boolean `final`. Historical
 open records retain `limit` as inert history. There are no derived exchange
-fields. The raw ledger stores `final` only when true. Reads and send receipts
-return false when it was absent.
+fields. Postbag writes `final` in the raw ledger only when true. A hand-written
+Boolean false is accepted as an ordinary letter. Reads and send receipts
+return false when the field was absent.
 
 Each inventory row has `bag`, `letters`, `last_letter`, and `peers`.
 `letters` is an integer for a readable bag and null for an unavailable bag.

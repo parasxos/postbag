@@ -94,7 +94,9 @@ def refusal_result(exc: postbag.Refusal) -> dict:
                            f"{instruction} from its own session. A recipient without MCP tools can use "
                            f"{postbag.bag().command('join ' + vendor + ' ' + peer)}.")
             else:
-                message = f"This session has no current peer name in this bag. To register, {instruction}."
+                reason = message.removeprefix(f"postbag: in bag {recovery['bag']}: ")
+                reason = reason.removesuffix("; stop and ask the human").rstrip(".")
+                message = f"{reason}. To register, {instruction}."
         elif action == "read" and actor == "caller":
             if exc.error_code == "ledger_busy":
                 message = ("The bag is busy. Wait for its current operation to finish, then "

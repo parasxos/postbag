@@ -390,6 +390,11 @@ def test_missing_bag_send_and_read_create_no_artifacts(wire, bag):
                 if tool == "postbag_read":
                     assert refused["data"] == {"recovery": {"action": "bags", "actor": "caller", "bag": bag}}
                     assert "postbag_bags" in refused["message"]
+                else:
+                    assert refused["data"] == {"recovery": {
+                        "action": "join", "actor": "caller", "bag": bag, "vendor": "codex", "name": None}}
+                    assert "does not exist" in refused["message"]
+                    assert "postbag_join" in refused["message"]
                 assert not (wire.home / ".postbag").exists()
     asyncio.run(exercise())
     assert wire.calls() == []

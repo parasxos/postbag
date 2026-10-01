@@ -48,7 +48,8 @@ MCP wire tests require the optional `mcp` extra and skip without it.
   retain their limits but do not control sending. Record `n` and paging cursors
   remain unchanged, while letter numbers count all recorded letters in a bag.
 - Preserve identity, redaction, uncertain-submission and cancellation tests
-  when changing the message flow. Test worker skew with actual old and new
+  when changing the message flow. CI keeps compact worker-protocol fixtures.
+  Before a major worker-protocol change ships, also test actual old and new
   modules. Do not infer pre-submission failure from an unstructured worker exit.
 
 Commit subjects are short and imperative.
