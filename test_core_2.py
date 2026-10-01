@@ -60,7 +60,9 @@ def test_cli_final_flag_sets_the_record_and_the_envelope(cli, fake_codex, final)
 @pytest.mark.parametrize("value", ["yes", 1, 0, None, "true", [True]])
 def test_send_refuses_a_final_that_is_not_a_boolean_before_the_lock(joined, value):
     before = joined.ledger_path().read_bytes()
-    error = refusal(lambda: joined.send("codex", "body", final=value))
+    with joined.ledger_path().open("r+") as holder:
+        fcntl.flock(holder, fcntl.LOCK_EX)  # a held lock proves the refusal comes first
+        error = refusal(lambda: joined.send("codex", "body", final=value, wait=False))
     assert error.error_code == "invalid_input" and error.submission_state == "not_submitted"
     assert "final must be true or false" in str(error)
     assert joined.KNOCKED == [] and joined.ledger_path().read_bytes() == before

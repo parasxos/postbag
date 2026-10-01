@@ -143,9 +143,9 @@ Joining creates a bag from either interface. See
    The roster in an envelope is a snapshot at submission, not a promise of
    what remains when the letter is read. A letter record carries `final`
    only when it is true. Every record keeps its line number `n`, including
-   joins and historical opens, and `read N` and MCP paging address records
-   by `n`. A letter's displayed number is its position among the bag's
-   letters.
+   joins and historical opens. `read N` shows the last N records, and MCP
+   paging cursors are record numbers. A letter's displayed number is its
+   position among the bag's letters.
 5. **postbag has no brake.** It sets no limit on how many letters a bag
    holds or how fast they arrive, and it has no verb a human runs from a
    terminal to stop two sessions. A host that confirms each tool call
@@ -157,10 +157,12 @@ Joining creates a bag from either interface. See
    each has limits. Ending a Claude session closes its inbox, so sends to
    it refuse. Ending a Codex client does not: its saved thread can still
    accept queued letters, which it reads when resumed. Neither recalls a
-   letter already queued or cancels a send in flight. Making the bag
-   unwritable stops new opens of the ledger, so later `send` and `join`
-   refuse, but a process that already holds the ledger finishes, and
-   postbag resets the file mode only when it creates the file. A
+   letter already queued or cancels a send in flight. Taking write
+   permission from the bag makes later `send` and `join` refuse at their
+   open, while `read` and `bags` still work on a readable file. A process
+   that already holds the ledger finishes, and one already waiting for the
+   lock rechecks the mode when it gets it. postbag sets the file mode only
+   when it creates the file. A
    recipient's inbound policy, where its host offers one, can hold or
    refuse letters before its model sees them. Refusals tell the agent to
    stop and ask the human. That suffix is an instruction to the agent,
@@ -246,9 +248,12 @@ the fourth of its second exchange may show as the sixteenth. Record line
 numbers never change. `open` is no longer a verb, and `postbag open` is an
 unknown verb like any other. The recovery hint for a missing bag on `send`
 names `join`, since `join` creates it. The MCP server and its worker
-carry a protocol version, so a running 1.x server that launches a 2.0
-worker file, or the reverse after a downgrade, refuses before any transport
-or ledger write and says to reconnect the server.
+carry a protocol version, and both skews refuse before any transport or
+ledger write. A running 1.x server that launches a 2.0 worker file gets
+a structured refusal, not submitted, that says to reconnect the server. A
+2.0 server that launches a 1.x worker file sees only a raw exit it cannot
+tell from a crash, so a send reports an unknown outcome and the other
+tools report a failed worker, each with the same reconnect guidance.
 
 ## What is deliberately absent
 
@@ -258,7 +263,9 @@ rooms, presence, peer discovery, a bag index, a current bag, bag liveness,
 and, since 2.0, a letter budget, a rate limit and a human-only verb. Each
 was considered and found to add a noun without adding a capability, or to
 duplicate a control the hosts already have. Resource limits are not
-budgets and stay: the letter body cap, the page size, the result depth
-cap, the native timeouts and the nonblocking ledger lock. The bag holds any number of
-doors and a letter has one recipient. Two sessions are the supported use.
+budgets and stay: the native timeouts and the nonblocking ledger lock in
+both interfaces, and over MCP the letter body cap, the page size and the
+result depth cap. The CLI takes a body of any size its door accepts. The
+bag holds any number of doors and a letter has one recipient. Two
+sessions are the supported use.
 More is experimental and promised nothing.

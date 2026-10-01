@@ -20,10 +20,9 @@ Type "# in the first Claude Code session"  Enter
 Type "in-ada postbag join claude ada" Sleep 300ms Enter Sleep 900ms
 Type "# in the second Claude Code session" Enter
 Type "in-bob postbag join claude bob" Sleep 300ms Enter Sleep 900ms
-Type "# in your own terminal: you set the budget" Enter
-Type "postbag open --limit 4" Sleep 300ms Enter Sleep 1200ms
-Type "# ada writes, then bob answers" Enter
+Type "# ada writes, bob answers, ada closes with a final letter" Enter
 Type `in-ada postbag send @bob "Review parser.py, top three findings please."` Sleep 300ms Enter Sleep 1400ms
 Type `in-bob postbag send @ada "Empty input, swallowed date errors, no field bound."` Sleep 300ms Enter Sleep 1400ms
+Type `in-ada postbag send --final @bob "Fixed all three, merging."` Sleep 300ms Enter Sleep 1400ms
 Type "postbag read" Sleep 300ms Enter
 Sleep 4s
