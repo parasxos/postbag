@@ -19,7 +19,7 @@ hosts that run them, not by postbag.
 | **letter** | Text from one peer to another. Numbered in its bag, timestamped, delivered, then recorded. A sender may mark a letter final. |
 | **ledger** | One append-only file, the bag. The whole history, the only state. A bag has a name, like a door: `default` is `~/.postbag/ledger.jsonl`, any other name is `~/.postbag/bags/<name>.jsonl`, and an absolute path is a bag too. |
 
-## Four verbs
+## Five verbs
 
 | Verb | Who | Effect |
 |---|---|---|
@@ -27,6 +27,7 @@ hosts that run them, not by postbag.
 | `send @name` | a peer, from inside its own session | knocks on that door, then records the letter. `--final` marks the letter as one that asks for no reply. |
 | `read` | anyone | prints the ledger, preceded by one line: the names held now and the number of letters |
 | `bags` | anyone | inventories existing ledgers in scope: letters recorded, last recorded letter time, and registered names with vendors |
+| `leave` | a peer, from inside its own session | releases the name its door holds in the bag. Letters to that name refuse until a door joins it again. |
 
 Every verb takes an optional `--bag NAME` before it. `join` creates any
 bag that does not exist, default, named or path alike. `send` and `read`
@@ -172,6 +173,22 @@ Joining creates a bag from either interface. See
 6. **Everything the agents share is the repository.** The bridge moves
    text, never files. Work products travel through git.
 
+## Leaving
+
+`leave` is the one thing a session can do to stop receiving letters in a
+bag without ending itself. It appends a `leave` record naming the door's
+current name. Replaying it drops the name from the bag, exactly as a later
+`join` by another door would, so a `send` to that name refuses with "not
+registered" and says when the name was left. The door itself is untouched:
+the session keeps running, letters already queued to a Codex thread still
+arrive, a send already past its lookup still knocks, and a `join` makes
+the door addressable again, under the same or another name. `leave` from a
+door that holds no name in the bag refuses. It never deletes the bag or
+its history. Over MCP it is `postbag_leave` with the bag, and the name is
+derived from the door, never passed. Readers older than this version
+refuse a ledger that holds a `leave` record as not a record, so both
+sessions run the same postbag, as everywhere.
+
 ## Names
 
 A name is a lowercase ASCII letter followed by up to fifteen lowercase
@@ -196,6 +213,7 @@ printable characters.
 | a session's name | a peer's name |
 | a message | a letter |
 | `ListAgents` | no equivalent. `read` and `bags` show registered names, not live agents |
+| a session ending | `leave`, which releases the name and nothing else |
 
 ## Envelope, verbatim
 
