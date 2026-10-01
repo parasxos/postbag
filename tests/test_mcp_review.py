@@ -19,12 +19,13 @@ import time
 import pytest
 
 HERE = Path(__file__).resolve().parent
+SOURCE = HERE.parent
 MODULES = ("postbag", "postbag_mcp")
-# Source layout: the modules sit beside this file and must be the ones under test.
+# Source layout: the modules sit one directory above tests/ and must be the ones under test.
 # Installed layout (CI copies only test_mcp*.py elsewhere): both come from the environment.
-SOURCE_LAYOUT = all((HERE / f"{module}.py").exists() for module in MODULES)
-if SOURCE_LAYOUT and Path(importlib.util.find_spec("postbag_mcp").origin).resolve() != HERE / "postbag_mcp.py":
-    sys.path.insert(0, str(HERE))
+SOURCE_LAYOUT = all((SOURCE / f"{module}.py").exists() for module in MODULES)
+if SOURCE_LAYOUT and Path(importlib.util.find_spec("postbag_mcp").origin).resolve() != SOURCE / "postbag_mcp.py":
+    sys.path.insert(0, str(SOURCE))
     for stale in (*MODULES, "test_mcp"):
         sys.modules.pop(stale, None)
 
@@ -40,7 +41,7 @@ def test_server_and_ledger_modules_come_from_one_layout():
     """The server under test and its ledger module must come from the same place."""
     origins = {module: Path(importlib.util.find_spec(module).origin).resolve() for module in MODULES}
     if SOURCE_LAYOUT:
-        assert origins == {module: HERE / f"{module}.py" for module in MODULES}
+        assert origins == {module: SOURCE / f"{module}.py" for module in MODULES}
     else:
         assert origins["postbag"].parent == origins["postbag_mcp"].parent, origins
         assert HERE not in origins["postbag_mcp"].parents and origins["postbag_mcp"].parent != HERE

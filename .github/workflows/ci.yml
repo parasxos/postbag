@@ -55,7 +55,7 @@ jobs:
       - name: Install MCP and test dependencies
         run: python -m pip install -e '.[dev,mcp]'
       - name: Run MCP subprocess wire tests
-        run: python -m pytest -q test_mcp*.py
+        run: python -m pytest -q tests/test_mcp*.py
       - name: Check MCP entry point
         run: postbag-mcp --version
 
@@ -82,7 +82,9 @@ jobs:
           import tarfile
           with tarfile.open(next(Path("dist").glob("*.tar.gz"))) as archive:
               packaged = {name.split("/", 1)[1] for name in archive.getnames() if "/" in name}
-          missing = {path.name for path in Path(".").glob("test_*.py")} - packaged
+          tests = {path.as_posix() for path in Path("tests").glob("test_*.py")}
+          assert tests, "No test modules found under tests/"
+          missing = tests - packaged
           assert not missing, f"Source archive is missing test modules: {sorted(missing)}"
           PYTESTARCHIVE
       - name: Install wheel and source archive in fresh environments
@@ -115,7 +117,7 @@ jobs:
           wheels=(dist/*.whl)
           "$RUNNER_TEMP/wheel-mcp/bin/python" -m pip install "${wheels[0]}[mcp]" pytest
           mkdir "$RUNNER_TEMP/wheel-mcp-tests"
-          cp test_mcp*.py "$RUNNER_TEMP/wheel-mcp-tests/"
+          cp tests/test_mcp*.py "$RUNNER_TEMP/wheel-mcp-tests/"
           cd "$RUNNER_TEMP/wheel-mcp-tests"
           "$RUNNER_TEMP/wheel-mcp/bin/postbag-mcp" --version
           "$RUNNER_TEMP/wheel-mcp/bin/python" -I -c 'import pathlib, sys, postbag_mcp; assert pathlib.Path(postbag_mcp.__file__).is_relative_to(sys.prefix)'

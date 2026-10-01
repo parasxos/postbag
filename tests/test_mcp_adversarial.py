@@ -16,11 +16,12 @@ import time
 import pytest
 
 HERE = Path(__file__).resolve().parent
-if (HERE / "postbag.py").exists():
-    # Source layout: test the checkout beside this file, not some other import of the same name.
+SOURCE = HERE.parent
+if (SOURCE / "postbag.py").exists():
+    # Source layout: test the checkout above tests/, not some other import of the same name.
     spec = importlib.util.find_spec("postbag_mcp")
-    if spec is None or Path(spec.origin).resolve() != HERE / "postbag_mcp.py":
-        sys.path.insert(0, str(HERE))
+    if spec is None or Path(spec.origin).resolve() != SOURCE / "postbag_mcp.py":
+        sys.path.insert(0, str(SOURCE))
         for stale in ("postbag_mcp", "postbag", "test_mcp"):
             sys.modules.pop(stale, None)
 # Installed layout (only test_mcp*.py copied elsewhere): use the installed package as found.

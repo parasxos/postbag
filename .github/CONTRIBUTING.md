@@ -16,6 +16,9 @@ python -m pip install -e ".[dev,mcp]"
 python -m pytest -q
 ```
 
+Tests live in `tests/`. Run only the MCP wire tests with
+`python -m pytest -q tests/test_mcp*.py`.
+
 Tests isolate the default and named-bag directories as well as
 `POSTBAG_LEDGER`, and use fake doors. They must never scan the user's bags
 or reach a real session. Core tests use the standard library and pytest.

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().with_name("postbag.py")
+SCRIPT = Path(__file__).resolve().parents[1] / "postbag.py"
 PRIVATE_BODY = "INVENTORY-PRIVATE-LETTER-BODY"
 PRIVATE_SOCKET = "/tmp/inventory-private-never-used.sock"
 PRIVATE_TOKEN = "inventory-private-fake-token"

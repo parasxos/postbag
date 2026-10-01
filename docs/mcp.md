@@ -419,7 +419,7 @@ with private HOME and `ResourceWarning` as an error. See the provenance, interru
 first attempt and native runtime versions in
 [native compatibility](native-compatibility.md).
 
-The `test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
+The `tests/test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
 homes, fake native executables, and private Unix sockets. The frozen 2.1
 source at `6489151` passed **665 tests** with private HOME and
 `ResourceWarning` as an error. Installed-wheel runs outside the source

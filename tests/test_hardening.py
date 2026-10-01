@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ("postbag.py" if (ROOT / "postbag.py").exists() else "postbag")
 SESSION_VARS = {
     "claude": {

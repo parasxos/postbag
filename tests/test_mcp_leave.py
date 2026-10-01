@@ -11,10 +11,11 @@ import pytest
 
 
 HERE = Path(__file__).resolve().parent
+SOURCE = HERE.parent
 MODULES = ("postbag", "postbag_mcp")
-SOURCE_LAYOUT = all((HERE / f"{module}.py").exists() for module in MODULES)
-if SOURCE_LAYOUT and Path(importlib.util.find_spec("postbag_mcp").origin).resolve() != HERE / "postbag_mcp.py":
-    sys.path.insert(0, str(HERE))
+SOURCE_LAYOUT = all((SOURCE / f"{module}.py").exists() for module in MODULES)
+if SOURCE_LAYOUT and Path(importlib.util.find_spec("postbag_mcp").origin).resolve() != SOURCE / "postbag_mcp.py":
+    sys.path.insert(0, str(SOURCE))
     for stale in (*MODULES, "test_mcp"):
         sys.modules.pop(stale, None)
 
@@ -61,7 +62,7 @@ def read_recovery(response, *, bag="default", submission_state=None):
 def test_leave_server_module_uses_source_or_installed_layout():
     origins = {module: Path(importlib.util.find_spec(module).origin).resolve() for module in MODULES}
     if SOURCE_LAYOUT:
-        assert origins == {module: HERE / f"{module}.py" for module in MODULES}
+        assert origins == {module: SOURCE / f"{module}.py" for module in MODULES}
     else:
         assert origins["postbag"].parent == origins["postbag_mcp"].parent
         assert Path(sys.prefix).resolve() in origins["postbag_mcp"].parents

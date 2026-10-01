@@ -26,7 +26,10 @@ except ImportError:
     pytest.skip("MCP wire checks require mcp 2.x", allow_module_level=True)
 
 
-ROOT = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent
+# Source layout: the modules sit one directory above tests/ and servers import them from there.
+# Installed layout (CI copies only test_mcp*.py elsewhere): ROOT holds no modules, the environment does.
+ROOT = HERE.parent if all((HERE.parent / f"{module}.py").exists() for module in ("postbag", "postbag_mcp")) else HERE
 SERVER_SCRIPT = Path(importlib.util.find_spec("postbag_mcp").origin)
 THREAD_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 THREAD_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"

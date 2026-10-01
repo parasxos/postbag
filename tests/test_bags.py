@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().with_name("postbag.py")
+SCRIPT = Path(__file__).resolve().parents[1] / "postbag.py"
 THREADS = {"ada": "fake-bag-thread-ada", "bob": "fake-bag-thread-bob"}
 
 
