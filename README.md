@@ -176,9 +176,10 @@ and fake native doors. See [Contributing](.github/CONTRIBUTING.md).
 - Postbag has no letter limit or rate limit. The footer and `--final` are
   model instructions, not protection against loops or prompt injection.
   Closing a Codex client does not revoke its saved thread's queue. Making a
-  ledger unwritable prevents new write opens but does not recall queued letters or
-  stop an operation that already holds the file. Host and filesystem controls
-  have these limits. Resource caps and native timeouts remain.
+  ledger unwritable prevents new write opens. Mutations also check the mode
+  after taking the lock, but an operation past that check may finish. Read
+  access can remain, and queued letters are not recalled. MCP body, page and
+  result depth caps remain, as do native timeouts.
 - "Delivered" means submitted through the door, not accepted or read. postbag
   does not wait for delivery notices or retry. A crash before recording leaves
   a submitted letter in doubt. Timeouts and failed native commands can also

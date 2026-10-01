@@ -39,8 +39,9 @@ are pending. Earlier release evidence below applies to those versions.
   questions. Human-requested receipts remain substantive work.
 - Preserve existing ledger modes. Mutations refuse files with group or other
   access or without owner read and write. Only creation sets mode `0600`.
-- Keep the body, page and worker-result depth caps, native timeouts and
-  nonblocking MCP locks. These resource controls do not prevent reply loops.
+- Keep MCP's body, page and worker-result depth caps and nonblocking locks,
+  along with native transport timeouts. The CLI does not apply MCP's body
+  cap. These resource controls do not prevent reply loops.
 
 ### Compatibility
 - Read historical bags without rewriting. Retain old `open` rows and their
@@ -54,7 +55,9 @@ are pending. Earlier release evidence below applies to those versions.
   the final flag. Upgrade all participants before continuing.
 - Footer guidance, final flags and host approvals do not guarantee that models
   stop. Closing a client does not revoke a persisted queue or recall a letter.
-  Making a ledger unwritable does not cancel an already-open operation.
+  Mutations check existing ledger modes after taking the lock. If a ledger
+  becomes unwritable, a waiting mutation can refuse, while an operation past
+  that check may finish and read access can remain.
 
 ## [1.4.0] - 2026-10-01
 

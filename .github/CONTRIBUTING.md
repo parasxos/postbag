@@ -36,7 +36,8 @@ MCP wire tests require the optional `mcp` extra and skip without it.
   partial file after an I/O failure instead of deleting another caller's state.
 - Create ledger files as `0600` and preserve existing modes. Refuse mutations
   when an existing file grants group or other access or lacks owner read and
-  write. Permission changes do not cancel already-open operations.
+  write. Check the existing mode after acquiring the lock. An operation
+  already past that check may finish after a permission change.
 - The envelope text in `envelope()` is the protocol the agents follow.
   Change it and its tests together. `final` is a strict Boolean and an advisory
   request not to reply to that letter. It must not disable later explicit sends.

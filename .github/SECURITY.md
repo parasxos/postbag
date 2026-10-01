@@ -52,14 +52,17 @@ MCP calls run with the server's permissions, outside the agent's command
 sandbox. Host tool approvals can give the human a chance to intervene at
 each send. A host configured to approve calls automatically offers no such
 pause. Recipient inbound policy can hold or refuse a letter where the host
-provides it. Body and page caps, worker-result depth checks, native timeouts
-and nonblocking MCP locks remain, but they do not bound the correspondence.
+provides it. MCP body and page caps, worker-result depth checks and
+nonblocking MCP locks remain, as do native transport timeouts. The CLI does
+not apply MCP's body cap. These controls do not bound the correspondence.
 
 Ending a Claude process closes its inbox. Closing a Codex client can leave
 its persisted thread available for queued letters. Making a ledger unwritable
-prevents new write opens of it, but a process that already holds the file can
-finish. Postbag does not restore the mode of an existing file. None of these
-actions recalls queued letters or cancels a submission already in flight.
+prevents new write opens of it. Mutations also check the mode after taking
+the lock, so an existing waiter may refuse. An operation past that check
+may finish, and read access can remain. Postbag does not restore the mode
+of an existing file. None of these actions recalls queued letters or cancels
+a submission already in flight.
 
 ## What "delivered" means
 

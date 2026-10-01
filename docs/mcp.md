@@ -275,16 +275,18 @@ An unexpected send failure whose position is uncertain reports
 `operation_failed` with state `unknown`, including an unexpected
 `BlockingIOError` outside the ledger-lock refusal.
 
-Removing letter budgets does not remove resource limits. The body and page
-caps, worker-result depth checks, native timeouts and nonblocking ledger
-locks remain. These controls do not bound the number of sends or guarantee
-that every operation finishes within a deadline.
+Removing letter budgets does not remove resource limits. MCP's body and page
+caps, worker-result depth checks and nonblocking ledger locks remain, as do
+the native transport timeouts shared with the CLI. The CLI does not apply
+MCP's 65,536-byte body cap. These controls do not bound the number of sends
+or guarantee that every operation finishes within a deadline.
 
 New ledger files use mode `0600`. Mutations preserve existing file modes and
 refuse a file with group or other access or without owner read and write.
-Making the ledger unwritable prevents new write opens, but an already-open
-operation can finish. Closing a Codex client does not revoke a persisted
-thread's queue. Neither action recalls a submitted letter.
+Making the ledger unwritable prevents new write opens. Mutations also check
+the mode after taking the lock, so an existing waiter may refuse. An operation
+past that check may finish, and read access can remain. Closing a Codex client
+does not revoke a persisted thread's queue. Neither action recalls a submitted letter.
 
 Cancelling a request does not cancel its worker while the server remains
 alive. Graceful server shutdown waits for workers to finish and record.
