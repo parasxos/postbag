@@ -549,3 +549,15 @@ def test_records_closes_its_descriptor_when_fstat_or_fdopen_fails(joined, monkey
         monkeypatch.setattr(joined.os, name, real)
     assert joined.ledger_path().read_bytes() == before
     assert joined.Snapshot(joined.records()).letters == 0  # a later read works
+
+
+def test_a_missing_bag_send_from_a_terminal_names_a_peer_not_the_human(bag, tmp_path, monkeypatch, be):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    be(None)
+    error = refusal(lambda: bag.main(["--bag", "ghost", "send", "codex", "hello"]))
+    text = str(error)
+    assert "a peer creates it from its session with:" in text and "your session" not in text
+    assert "join claude" in text and "join codex" in text
+    assert error.recovery["vendor"] is None and error.recovery["action"] == "join"
+    assert not (tmp_path / "home" / ".postbag").exists()

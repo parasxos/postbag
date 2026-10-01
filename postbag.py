@@ -76,7 +76,8 @@ class Bag:
         if verb == "send":
             sources = sorted(inside())
             commands = " or ".join(self.command(f"join {source}") for source in sources or sorted(PEERS))
-            fail(f"bag {self.label} does not exist, create it from your session with: {commands}",
+            who = "create it from your session with" if sources else "a peer creates it from its session with"
+            fail(f"bag {self.label} does not exist, {who}: {commands}",
                  recovery={"action": "join", "actor": "caller", "bag": self.label,
                            "vendor": sources[0] if len(sources) == 1 else None, "name": None})
         fail(f"bag {self.label} does not exist, run: postbag bags",
