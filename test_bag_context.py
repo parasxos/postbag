@@ -24,10 +24,11 @@ def seed(path):
     rows = [
         {"kind": "join", "peer": "ada", "vendor": "codex", "thread": "fake-ada"},
         {"kind": "join", "peer": "bob", "vendor": "codex", "thread": "fake-bob"},
-        {"kind": "open", "limit": 2},
+        {"kind": "open", "limit": 2},  # 1.x history, inert
     ]
     path.write_text("".join(json.dumps(dict(n=i, at="2026-09-09T12:00:00+02:00", **row)) + "\n"
                             for i, row in enumerate(rows, 1)), encoding="utf-8")
+    path.chmod(0o600)
 
 
 @pytest.mark.parametrize("arguments", [
@@ -51,32 +52,48 @@ def test_each_main_call_restores_selection_after_success_or_refusal(isolated, mo
     assert capsys.readouterr().out.startswith(f"in bag {custom}:")
 
 
-def test_explicit_flag_overrides_even_an_unexpandable_environment_path(isolated, monkeypatch, capsys):
+def test_explicit_flag_overrides_even_an_unexpandable_environment_path(isolated, monkeypatch):
     monkeypatch.setenv("POSTBAG_LEDGER", "~postbag-nonexistent-test-user-78209/ledger")
-    postbag.main(["--bag", "default", "read"])
-    assert capsys.readouterr().out == "in bag default: none. no open exchange.\n"
+    with pytest.raises(SystemExit) as error:
+        postbag.main(["--bag", "default", "read"])
+    assert str(error.value).startswith("postbag: in bag default: bag default does not exist")
+    assert "78209" not in str(error.value)
+    assert not (isolated / ".postbag").exists()
 
 
-@pytest.mark.parametrize("verb", ["join", "send"])
-def test_named_write_does_not_recreate_a_ledger_removed_before_open(isolated, monkeypatch, verb):
+def removing_open(monkeypatch, path):
+    """Make the ledger vanish between the selection and the writer's open, as another process could."""
+    original_open = os.open
+
+    def remove_then_open(filename, flags, *args, **kwargs):
+        if Path(filename) == path and flags & os.O_RDWR and path.exists():
+            path.unlink()
+        return original_open(filename, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", remove_then_open)
+
+
+def test_send_does_not_recreate_a_ledger_removed_before_open(isolated, monkeypatch):
     path = isolated / ".postbag" / "bags" / "review.jsonl"
     seed(path)
     monkeypatch.setenv("CODEX_SESSION_ID", "fake-ada")
     knocks = []
     monkeypatch.setitem(postbag.KNOCK, "codex", lambda *args: knocks.append(args))
-    original_open = os.open
-
-    def remove_then_open(filename, flags, *args, **kwargs):
-        if Path(filename) == path and flags & os.O_RDWR:
-            path.unlink()
-        return original_open(filename, flags, *args, **kwargs)
-
-    monkeypatch.setattr(os, "open", remove_then_open)
-    operation = ["join", "codex", "ada"] if verb == "join" else ["send", "bob", "hello"]
+    removing_open(monkeypatch, path)
     with pytest.raises(SystemExit, match="bag review does not exist"):
-        postbag.main(["--bag", "review", *operation])
+        postbag.main(["--bag", "review", "send", "bob", "hello"])
     assert not path.exists()
     assert knocks == []
+
+
+def test_join_recreates_a_ledger_removed_before_open_because_join_creates(isolated, monkeypatch):
+    path = isolated / ".postbag" / "bags" / "review.jsonl"
+    seed(path)
+    monkeypatch.setenv("CODEX_SESSION_ID", "fake-ada")
+    removing_open(monkeypatch, path)
+    postbag.main(["--bag", "review", "join", "codex", "ada"])
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [(row["n"], row["kind"], row["peer"]) for row in rows] == [(1, "join", "ada")]
 
 
 @pytest.mark.parametrize("switch_at", ["stdin", "knock"])
@@ -112,7 +129,7 @@ def test_selection_is_fixed_before_stdin_and_through_delivery(isolated, monkeypa
     assert len(envelopes) == 1
     assert f"bag {original})." in envelopes[0]
     assert f"postbag --bag '{original}' send @ada -" in envelopes[0]
-    assert f"in bag {original}, 1 left" in capsys.readouterr().out
+    assert capsys.readouterr().out == f"letter 1 delivered to @bob in bag {original}\n"
 
 
 def test_parser_refusals_keep_an_already_selected_bag(isolated):

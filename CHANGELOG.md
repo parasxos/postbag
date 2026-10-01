@@ -4,6 +4,71 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-10-01
+
+Postbag no longer uses letter budgets or exchanges. Upgrade both peers,
+including their CLI and MCP installations, and reconnect each MCP server.
+Existing bags read without migration. Historical `open` records remain as
+inert history.
+
+### Removed
+- Remove the `open` command, exchanges, letter budgets and the human-only
+  command distinction. Postbag sets no limit on the number or rate of letters.
+- Remove derived exchange and remaining-budget fields from MCP results.
+
+### Added
+- CLI `send --final` and MCP `final=true` ask for no reply to that letter.
+  The flag is a strict Boolean, absent meaning false. It is stored in the
+  ledger only when true and returned in send receipts and MCP letter records.
+  Its footer carries no reply command. It does not prevent a later send.
+- Internal worker protocol 2 uses a separate entry point. Old-server/new-worker
+  mismatch refuses before work. New-server/old-worker mismatch exits before
+  dispatch, but the parent conservatively reports an unknown send outcome
+  because an unstructured exit cannot prove that stage. Reconnect after
+  upgrading or downgrading. There is no fallback to the old entry point.
+
+### Changed
+- `join` creates a missing default, named or path-selected bag. Argument and
+  identity refusals create nothing. Missing-bag `send` and `read` create no
+  files or directories and direct the caller to `join` or `bags`, respectively.
+  Once creation starts, an I/O failure can leave a directory or partial file.
+- Count letters cumulatively across each bag. Inventory reports letter counts
+  instead of budgets, and distinguishes bags with letters, bags without letters
+  and unavailable bags.
+- Ask recipients to reply only when doing so advances the task, without
+  courtesy acknowledgements, unsolicited delivery checks or unnecessary
+  questions. Human-requested receipts remain substantive work.
+- Preserve existing ledger modes. Mutations refuse files with group or other
+  access or without owner read and write. Only creation sets mode `0600`.
+- Keep MCP's body, page and worker-result depth caps and nonblocking locks,
+  along with native transport timeouts. The CLI does not apply MCP's body
+  cap. These resource controls do not prevent reply loops.
+
+### Compatibility
+- Read historical bags without rewriting. Retain old `open` rows and their
+  `limit` as inert history. Every record keeps its original `n`, addressed by
+  MCP `before` and `next_before`. CLI `read N` returns the last N records.
+  Displayed letter numbers count only letters, including those before old
+  exchange boundaries.
+- Mixed 1.x/2.0 participants are unsupported and not negotiated. An old sender
+  still applies the last retained budget and counts 2.0 letters against it.
+  New bags have no `open` row, so old senders refuse there. Old readers hide
+  the final flag. Upgrade all participants before continuing.
+- Footer guidance, final flags and host approvals do not guarantee that models
+  stop. Closing a client does not revoke a persisted queue or recall a letter.
+  Mutations check existing ledger modes after taking the lock. If a ledger
+  becomes unwritable, a waiting mutation can refuse, while an operation past
+  that check may finish and read access can remain.
+
+### Validation
+- The installed `8b87b4f` candidate passed native acceptance on its first run:
+  two-way receipt, a 30.0668-second final-letter observation and a deliberately
+  initiated ordinary round trip afterward. [Native evidence](docs/native-compatibility.md)
+  records exact provenance, runtime versions, permissions and limits.
+- The same candidate passed 586 full-suite tests, 157 installed-wheel MCP
+  tests and 55 extracted-sdist `test_core_2.py` checks. All 13 CI jobs passed.
+  [Candidate CI](https://github.com/parasxos/postbag/actions/runs/36842969085).
+
 ## [1.4.0] - 2026-10-01
 
 Refusals now carry structured recovery guidance, so an MCP caller is told
@@ -268,7 +333,9 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/parasxos/postbag/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/parasxos/postbag/releases/tag/v2.0.0
+[1.4.0]: https://github.com/parasxos/postbag/releases/tag/v1.4.0
 [1.3.0]: https://github.com/parasxos/postbag/releases/tag/v1.3.0
 [1.2.1]: https://github.com/parasxos/postbag/releases/tag/v1.2.1
 [1.2.0]: https://github.com/parasxos/postbag/releases/tag/v1.2.0

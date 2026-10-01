@@ -75,6 +75,16 @@ jobs:
           python -m pip install build twine
           python -m build
           python -m twine check dist/*
+      - name: Verify the source archive includes every test module
+        run: |
+          python - <<'PYTESTARCHIVE'
+          from pathlib import Path
+          import tarfile
+          with tarfile.open(next(Path("dist").glob("*.tar.gz"))) as archive:
+              packaged = {name.split("/", 1)[1] for name in archive.getnames() if "/" in name}
+          missing = {path.name for path in Path(".").glob("test_*.py")} - packaged
+          assert not missing, f"Source archive is missing test modules: {sorted(missing)}"
+          PYTESTARCHIVE
       - name: Install wheel and source archive in fresh environments
         shell: bash
         run: |

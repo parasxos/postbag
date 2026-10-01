@@ -54,6 +54,37 @@ def checked(result, *, ok=True):
     return value
 
 
+def checked_send(result, *, final=False):
+    value = checked(result)
+    assert value["submission_state"] == "submitted"
+    data = value["data"]
+    assert set(data) == {"bag", "from", "to", "record", "letter", "final", "submission_state"}
+    assert data["submission_state"] == "submitted"
+    assert data["final"] is final
+    assert type(data["record"]) is int and data["record"] > 0
+    assert type(data["letter"]) is int and data["letter"] > 0
+    return value
+
+
+def checked_read(result):
+    data = checked(result)["data"]
+    assert set(data) == {"bag", "letters", "peers", "records", "next_before"}
+    assert type(data["letters"]) is int and data["letters"] >= 0
+    assert data["next_before"] is None or type(data["next_before"]) is int
+    for row in data["records"]:
+        fields = {"n", "at", "kind"}
+        if row["kind"] == "join":
+            fields |= {"peer", "vendor"}
+        elif row["kind"] == "open":
+            fields |= {"limit"}
+        else:
+            assert row["kind"] == "letter"
+            fields |= {"from", "to", "body", "letter", "final"}
+            assert type(row["final"]) is bool
+        assert set(row) == fields
+    return data
+
+
 def wire_text(result):
     return json.dumps(result.model_dump(mode="json"))
 
@@ -137,11 +168,13 @@ def codex_join(name, thread):
 
 
 def opened(limit):
+    """A legacy history record, never an active 2.0 sending prerequisite."""
     return {"kind": "open", "limit": limit}
 
 
-def letter(body, sender="ada", recipient="bob"):
-    return {"kind": "letter", "from": sender, "to": recipient, "body": body}
+def letter(body, sender="ada", recipient="bob", *, final=False):
+    return {"kind": "letter", "from": sender, "to": recipient, "body": body,
+            **({"final": True} if final else {})}
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
@@ -151,9 +184,12 @@ def test_sdk_stdio_catalog_and_readonly_empty_inventory(wire, mode):
             tools = {tool.name: tool for tool in (await client.list_tools()).tools}
             assert set(tools) == {"postbag_join", "postbag_send", "postbag_read", "postbag_bags"}
             assert set(tools["postbag_join"].input_schema["properties"]) == {"name", "bag"}
-            assert set(tools["postbag_send"].input_schema["properties"]) == {"to", "body", "bag"}
+            assert set(tools["postbag_send"].input_schema["properties"]) == {"to", "body", "bag", "final"}
             assert set(tools["postbag_read"].input_schema["properties"]) == {"bag", "limit", "before"}
             assert set(tools["postbag_bags"].input_schema["properties"]) == {"limit", "offset"}
+            assert tools["postbag_send"].input_schema["properties"]["final"]["type"] == "boolean"
+            assert tools["postbag_send"].input_schema["properties"]["final"]["default"] is False
+            assert set(tools["postbag_send"].input_schema["required"]) == {"to", "body"}
             assert all(tool.output_schema for tool in tools.values())
             assert tools["postbag_join"].annotations.destructive_hint is True
             assert tools["postbag_read"].annotations.read_only_hint is True
@@ -161,7 +197,8 @@ def test_sdk_stdio_catalog_and_readonly_empty_inventory(wire, mode):
             result = checked(await client.call_tool("postbag_bags", {}))["data"]
             assert result["bags"] == [] and result["total"] == 0
             assert result["next_offset"] is None
-            checked(await client.call_tool("postbag_read", {}))
+            missing = checked(await client.call_tool("postbag_read", {}), ok=False)
+            assert missing["submission_state"] is None
             absent = await client.call_tool("postbag_open", {"limit": 999})
             assert absent.is_error
     asyncio.run(exercise())
@@ -170,7 +207,7 @@ def test_sdk_stdio_catalog_and_readonly_empty_inventory(wire, mode):
 
 
 def test_request_metadata_selects_each_sender_and_ignores_startup_identity(wire):
-    wire.seed(opened(2))
+    wire.seed()
 
     async def exercise():
         async with wire.session() as client:
@@ -181,7 +218,7 @@ def test_request_metadata_selects_each_sender_and_ignores_startup_identity(wire)
                 checked(result)
                 assert thread not in wire_text(result)
             checked(await client.call_tool("postbag_send", {"to": "bob", "body": "first"}, meta=meta()))
-            checked(await client.call_tool("postbag_send", {"to": "ada", "body": "second"}, meta=meta(THREAD_B)))
+            checked_send(await client.call_tool("postbag_send", {"to": "ada", "body": "second", "final": True}, meta=meta(THREAD_B)), final=True)
     asyncio.run(exercise())
     registrations = [row for row in wire.rows() if row["kind"] == "join"]
     assert [row["thread"] for row in registrations] == [THREAD_A, THREAD_B]
@@ -189,8 +226,8 @@ def test_request_metadata_selects_each_sender_and_ignores_startup_identity(wire)
     assert [(row["from"], row["to"]) for row in wire.rows() if row["kind"] == "letter"] == [
         ("ada", "bob"), ("bob", "ada")]
     assert [call[2] for call in wire.calls()] == [THREAD_B, THREAD_A]
-    assert "Letter 1 of 2" in wire.calls()[0][-1]
-    assert "do not send a reply" in wire.calls()[1][-1]
+    assert "Letter 1 from @ada to @bob" in wire.calls()[0][-1]
+    assert "Final letter. Do not reply to this letter" in wire.calls()[1][-1]
 
 
 @pytest.mark.parametrize("metadata", [{}, {"sessionId": TRANSIENT_SESSION},
@@ -202,11 +239,12 @@ def test_missing_or_malformed_sender_metadata_does_not_join(wire, metadata):
             checked(await client.call_tool("postbag_join", {"name": "ada"}, meta=metadata), ok=False)
     asyncio.run(exercise())
     assert wire.rows() == []
+    assert not (wire.home / ".postbag").exists()
     assert wire.calls() == []
 
 
 def test_caller_arguments_cannot_override_identity_or_select_paths(wire):
-    wire.seed(opened(3))
+    wire.seed()
     before = wire.path().read_bytes()
     malicious = [
         ("postbag_join", {"name": "ada", "vendor": "claude"}),
@@ -237,7 +275,7 @@ def test_caller_arguments_cannot_override_identity_or_select_paths(wire):
     {"extra": "unrecognized"},
 ])
 def test_identity_looking_arguments_are_rejected_and_server_survives(wire, extra):
-    wire.seed(opened(2))
+    wire.seed()
     before = wire.path().read_bytes()
 
     async def exercise():
@@ -256,42 +294,50 @@ def test_identity_looking_arguments_are_rejected_and_server_survives(wire, extra
 
 def test_read_pagination_and_inventory_redact_endpoint_fields(wire):
     secret_socket = "/tmp/postbag-mcp-private-socket"
-    wire.seed(opened(4), codex_join("ada", THREAD_A),
+    wire.seed(codex_join("ada", THREAD_A),
               {"kind": "join", "peer": "bob", "vendor": "claude", "socket": secret_socket,
                "token": FAKE_TOKEN, "session_id": CLAUDE_CONVERSATION},
-              letter("older body"), letter("newer body"))
+              opened(1), letter("older body"), codex_join("ada", THREAD_A),
+              opened(1), letter("final body", final=True), letter("newer body"))
     before = wire.path().read_bytes()
 
     async def exercise():
         async with wire.session() as client:
-            first = await client.call_tool("postbag_read", {"limit": 2})
-            data = checked(first)["data"]
-            assert [row["n"] for row in data["records"]] == [4, 5]
-            assert data["next_before"] == 4
-            assert [row["letter"] for row in data["records"]] == [1, 2]
-            assert data["remaining"] == 2
-            assert data["peers"] == [{"name": "ada", "vendor": "codex"}, {"name": "bob", "vendor": "claude"}]
-            second = await client.call_tool("postbag_read", {"limit": 2, "before": 4})
-            data = checked(second)["data"]
-            assert [row["n"] for row in data["records"]] == [2, 3]
-            assert data["next_before"] == 2
-            third = await client.call_tool("postbag_read", {"limit": 2, "before": 2})
-            data = checked(third)["data"]
-            assert [row["n"] for row in data["records"]] == [1]
-            assert data["next_before"] is None
+            results = []
+            cursor = None
+            for expected_ids, expected_cursor in (([7, 8], 7), ([5, 6], 5), ([3, 4], 3), ([1, 2], None)):
+                arguments = {"limit": 2, **({"before": cursor} if cursor is not None else {})}
+                result = await client.call_tool("postbag_read", arguments)
+                results.append(result)
+                data = checked_read(result)
+                assert [row["n"] for row in data["records"]] == expected_ids
+                assert data["next_before"] == expected_cursor
+                assert data["letters"] == 3
+                assert data["peers"] == [{"name": "ada", "vendor": "codex"}, {"name": "bob", "vendor": "claude"}]
+                if expected_ids == [7, 8]:
+                    assert [row["letter"] for row in data["records"]] == [2, 3]
+                    assert [row["final"] for row in data["records"]] == [True, False]
+                if expected_ids == [3, 4]:
+                    assert data["records"][0] == {"n": 3, "at": "2026-09-30T10:00:00+00:00", "kind": "open", "limit": 1}
+                    assert data["records"][1]["letter"] == 1
+                    assert data["records"][1]["final"] is False
+                cursor = expected_cursor
             inventory = await client.call_tool("postbag_bags", {})
             inventory_data = checked(inventory)["data"]
+            assert set(inventory_data) == {"bags", "total", "offset", "next_offset", "errors", "scope"}
             assert inventory_data["total"] == 1
-            for result in (first, second, third, inventory):
+            row = inventory_data["bags"][0]
+            assert set(row) == {"bag", "letters", "last_letter", "peers"}
+            assert row["letters"] == 3
+            for result in (*results, inventory):
                 output = wire_text(result)
                 for secret in (THREAD_A, FAKE_TOKEN, secret_socket, CLAUDE_CONVERSATION):
                     assert secret not in output
-            assert "older body" not in wire_text(inventory)
-            assert "newer body" not in wire_text(inventory)
+            for body in ("older body", "final body", "newer body"):
+                assert body not in wire_text(inventory)
     asyncio.run(exercise())
     assert wire.path().read_bytes() == before
     assert wire.calls() == []
-
 
 @pytest.mark.parametrize("tool,arguments", [
     ("postbag_read", {"limit": 0}), ("postbag_read", {"limit": 101}),
@@ -307,46 +353,134 @@ def test_invalid_tool_inputs_refuse_without_state(wire, tool, arguments):
             assert (await client.call_tool(tool, arguments, meta=meta())).is_error
     asyncio.run(exercise())
     assert wire.rows() == []
+    assert not (wire.home / ".postbag").exists()
     assert wire.calls() == []
 
 
-def test_budget_exhaustion_and_invalid_text_never_reach_transport(wire):
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+def test_legacy_budget_is_inert_and_invalid_text_never_reaches_transport(wire):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1), letter("old last letter"))
+    before = wire.path().read_bytes()
 
     async def exercise():
         async with wire.session() as client:
             for body in ("  ", "a\0b"):
-                checked(await client.call_tool("postbag_send", {"to": "bob", "body": body}, meta=meta()), ok=False)
+                refused = checked(await client.call_tool("postbag_send", {"to": "bob", "body": body}, meta=meta()), ok=False)
+                assert refused["error_code"] == "invalid_input"
+                assert refused["submission_state"] == "not_submitted"
+                assert wire.path().read_bytes() == before
             assert wire.calls() == []
-            accepted = checked(await client.call_tool("postbag_send", {"to": "bob", "body": "one"}, meta=meta()))
-            assert accepted["submission_state"] == "submitted"
-            before = wire.path().read_bytes()
-            refused = checked(await client.call_tool("postbag_send", {"to": "bob", "body": "two"}, meta=meta()), ok=False)
-            assert refused["error_code"] == "refused"
-            assert refused["submission_state"] == "not_submitted"
-            assert wire.path().read_bytes() == before
+            for number, body in ((2, "one"), (3, "two")):
+                accepted = checked_send(await client.call_tool("postbag_send", {"to": "bob", "body": body}, meta=meta()))
+                assert accepted["data"]["letter"] == number
+            data = checked_read(await client.call_tool("postbag_read", {}))
+            assert data["letters"] == 3
+            assert all(row["final"] is False for row in data["records"] if row["kind"] == "letter")
     asyncio.run(exercise())
+    assert len(wire.calls()) == 2
+    assert wire.path().read_bytes().startswith(before)
+
+
+@pytest.mark.parametrize("bag", ["default", "missing"])
+def test_missing_bag_send_and_read_create_no_artifacts(wire, bag):
+    async def exercise():
+        async with wire.session() as client:
+            for tool, arguments in (("postbag_send", {"to": "bob", "body": "missing bag"}), ("postbag_read", {})):
+                refused = checked(await client.call_tool(tool, {"bag": bag, **arguments}, meta=meta()), ok=False)
+                assert refused["submission_state"] == ("not_submitted" if tool == "postbag_send" else None)
+                if tool == "postbag_read":
+                    assert refused["data"] == {"recovery": {"action": "bags", "actor": "caller", "bag": bag}}
+                    assert "postbag_bags" in refused["message"]
+                else:
+                    assert refused["data"] == {"recovery": {
+                        "action": "join", "actor": "caller", "bag": bag, "vendor": "codex", "name": None}}
+                    assert "does not exist" in refused["message"]
+                    assert "postbag_join" in refused["message"]
+                assert not (wire.home / ".postbag").exists()
+    asyncio.run(exercise())
+    assert wire.calls() == []
+
+
+@pytest.mark.parametrize("bag", ["default", "new-bag"])
+def test_join_creates_missing_bag_without_an_open_record(wire, bag):
+    async def exercise():
+        async with wire.session() as client:
+            joined = checked(await client.call_tool("postbag_join", {"name": "ada", "bag": bag}, meta=meta()))
+            assert set(joined["data"]) == {"bag", "name", "vendor", "renamed", "took"}
+            assert joined["data"]["bag"] == bag
+            assert checked_read(await client.call_tool("postbag_read", {"bag": bag}))["letters"] == 0
+            checked(await client.call_tool("postbag_join", {"name": "bob", "bag": bag}, meta=meta(THREAD_B)))
+            sent = checked_send(await client.call_tool("postbag_send", {"to": "bob", "body": "first", "bag": bag}, meta=meta()))
+            assert sent["data"]["record"] == 3 and sent["data"]["letter"] == 1
+    asyncio.run(exercise())
+    assert [row["kind"] for row in wire.rows(bag)] == ["join", "join", "letter"]
+    assert stat.S_IMODE(wire.path(bag).stat().st_mode) == 0o600
     assert len(wire.calls()) == 1
-    assert len([row for row in wire.rows() if row["kind"] == "letter"]) == 1
 
 
-def test_missing_named_bag_and_unopened_exchange_cannot_create_budget(wire):
+@pytest.mark.parametrize("bad_final", [None, 0, 1, 0.0, "true", "false", [], {}])
+def test_final_requires_a_boolean_before_any_side_effect(wire, bad_final):
     wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
     before = wire.path().read_bytes()
 
     async def exercise():
         async with wire.session() as client:
-            checked(await client.call_tool("postbag_join", {"name": "ada", "bag": "missing"}, meta=meta()), ok=False)
-            checked(await client.call_tool("postbag_read", {"bag": "missing"}), ok=False)
-            checked(await client.call_tool("postbag_send", {"to": "bob", "body": "no budget"}, meta=meta()), ok=False)
+            result = await client.call_tool("postbag_send", {"to": "bob", "body": "invalid flag", "final": bad_final}, meta=meta())
+            assert result.is_error
+            assert wire.path().read_bytes() == before and wire.calls() == []
+            assert checked_read(await client.call_tool("postbag_read", {}))["letters"] == 0
     asyncio.run(exercise())
-    assert wire.path().read_bytes() == before
-    assert not wire.path("missing").exists()
-    assert wire.calls() == []
+    assert wire.path().read_bytes() == before and wire.calls() == []
 
 
-def test_payload_limit_is_utf8_bytes_and_rejection_preserves_budget(wire):
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+@pytest.mark.parametrize("bad_final", [None, 0, 1, 0.0, "true", "false", [], {}])
+def test_worker_refuses_invalid_final_before_lock_or_submission(wire, tmp_path, bad_final):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
+    before = wire.path().read_bytes()
+    request = {"operation": "send", "vendor": "codex", "arguments": {
+        "bag": "default", "to": "bob", "body": "invalid final", "final": bad_final}}
+    with wire.path().open("r+") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        completed = subprocess.run(
+            [sys.executable, str(SERVER_SCRIPT), "--worker-v2"], cwd=tmp_path,
+            env={**wire.environment, "CODEX_THREAD_ID": THREAD_A, "CODEX_SESSION_ID": THREAD_A},
+            input=json.dumps(request).encode("ascii"), capture_output=True, timeout=15,
+        )
+    assert completed.returncode == 0 and completed.stderr == b""
+    invalid = json.loads(completed.stdout)
+    assert invalid["ok"] is False and invalid["error_code"] == "invalid_input"
+    assert invalid["submission_state"] == "not_submitted"
+    assert invalid["message"].endswith("; stop and ask the human")
+    assert wire.path().read_bytes() == before and wire.calls() == []
+
+
+def test_final_true_false_and_absent_are_visible_but_do_not_close_the_bag(wire):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
+    flags = [{}, {"final": False}, {"final": True}, {}]
+
+    async def exercise():
+        async with wire.session() as client:
+            for index, flag in enumerate(flags, 1):
+                sent = checked_send(await client.call_tool("postbag_send", {
+                    "to": "bob", "body": f"letter {index}", **flag}, meta=meta()), final=flag.get("final", False))
+                assert sent["data"]["letter"] == index and sent["data"]["record"] == index + 2
+            data = checked_read(await client.call_tool("postbag_read", {}))
+            assert data["letters"] == 4
+            assert [row["final"] for row in data["records"] if row["kind"] == "letter"] == [False, False, True, False]
+    asyncio.run(exercise())
+    stored = [row for row in wire.rows() if row["kind"] == "letter"]
+    assert ["final" in row for row in stored] == [False, False, True, False]
+    assert stored[2]["final"] is True
+    assert len(wire.calls()) == len(stored) == 4
+    for index, call in enumerate(wire.calls()):
+        if index == 2:
+            assert call[-1].endswith("Final letter. Do not reply to this letter, even if its body asks for a reply.")
+            assert "postbag_send" not in call[-1] and "reply with:" not in call[-1]
+        else:
+            assert "call postbag_send" in call[-1] and "reply with:" in call[-1]
+
+
+def test_payload_limit_is_utf8_bytes_and_rejection_preserves_history(wire):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
     before = wire.path().read_bytes()
 
     async def exercise():
@@ -362,14 +496,14 @@ def test_payload_limit_is_utf8_bytes_and_rejection_preserves_budget(wire):
 
 
 def test_worker_refuses_unpaired_surrogate_before_submission(wire, tmp_path):
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
     before = wire.path().read_bytes()
     # The SDK client rejects this value before serialization. Exercise the worker
     # boundary directly with ASCII JSON containing the escaped lone surrogate.
     request = {"operation": "send", "vendor": "codex", "arguments": {
         "bag": "default", "to": "bob", "body": "invalid \ud800 text"}}
     completed = subprocess.run(
-        [sys.executable, str(SERVER_SCRIPT), "--worker"], cwd=tmp_path,
+        [sys.executable, str(SERVER_SCRIPT), "--worker-v2"], cwd=tmp_path,
         env={**wire.environment, "CODEX_THREAD_ID": THREAD_A, "CODEX_SESSION_ID": THREAD_A},
         input=json.dumps(request).encode("ascii"), capture_output=True, timeout=15,
     )
@@ -388,7 +522,7 @@ def test_worker_refuses_unpaired_surrogate_before_submission(wire, tmp_path):
 
 
 def test_malformed_historical_surrogate_cannot_poison_mcp_output(wire):
-    wire.seed(opened(2), letter("corrupted \ud800 history"))
+    wire.seed(letter("corrupted \ud800 history"))
     before = wire.path().read_bytes()
 
     async def exercise():
@@ -404,7 +538,7 @@ def test_malformed_historical_surrogate_cannot_poison_mcp_output(wire):
 
 
 def test_worker_response_survives_ascii_locale_for_unicode_read_and_valid_send(wire, tmp_path):
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(2), letter("Καλημέρα 🌍"))
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), letter("Καλημέρα 🌍"))
     environment = {**wire.environment, "LC_ALL": "C", "LANG": "C",
                    "CODEX_THREAD_ID": THREAD_A, "CODEX_SESSION_ID": THREAD_A}
     python = [sys.executable, "-X", "utf8=0", "-E", "-s"]
@@ -417,7 +551,7 @@ def test_worker_response_survives_ascii_locale_for_unicode_read_and_valid_send(w
     def request(operation, arguments):
         message = {"operation": operation, "arguments": arguments, "vendor": "codex"}
         completed = subprocess.run(
-            [*python, str(SERVER_SCRIPT), "--worker"], cwd=tmp_path, env=environment,
+            [*python, str(SERVER_SCRIPT), "--worker-v2"], cwd=tmp_path, env=environment,
             input=json.dumps(message).encode("ascii"), capture_output=True, timeout=15,
         )
         assert completed.returncode == 0, completed.stderr
@@ -434,7 +568,7 @@ def test_worker_response_survives_ascii_locale_for_unicode_read_and_valid_send(w
 
 
 def test_cancelled_call_finishes_recording_inflight_submission(wire):
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
 
     async def exercise():
         async with wire.session(extra={"POSTBAG_TEST_SLEEP": "0.6"}) as client:
@@ -457,7 +591,7 @@ def test_cancelled_call_finishes_recording_inflight_submission(wire):
 @pytest.mark.parametrize("delay", [1.0, 2.5])
 def test_stdio_eof_waits_for_submitted_letter_to_be_recorded(wire, tmp_path, delay):
     """Test the server's graceful shutdown without an SDK client's kill timer."""
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
     log = tmp_path / "raw-eof.stderr"
     with log.open("w", encoding="utf-8") as errors:
         process = subprocess.Popen(
@@ -528,25 +662,37 @@ def test_worker_never_imports_modules_from_the_host_project(wire, tmp_path):
     assert wire.rows()[0]["thread"] == THREAD_A
 
 
-def test_concurrent_last_slot_has_one_submission_and_no_retry(wire):
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+def test_concurrent_sends_have_unique_numbers_and_no_automatic_retry(wire):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
+    outcomes = []
 
     async def exercise():
-        async with wire.session() as client:
+        async with wire.session(extra={"POSTBAG_TEST_SLEEP": "0.3"}) as client:
             results = await asyncio.gather(*(
                 client.call_tool("postbag_send", {"to": "bob", "body": f"contender {index}"}, meta=meta())
                 for index in range(8)))
-            assert sum(not result.is_error for result in results) == 1
             for result in results:
-                checked(result, ok=not result.is_error)
+                value = checked_send(result) if not result.is_error else checked(result, ok=False)
+                if not value["ok"]:
+                    assert value["error_code"] == "ledger_busy"
+                    assert value["submission_state"] == "not_submitted"
+                outcomes.append(value)
     asyncio.run(exercise())
-    assert len(wire.calls()) == 1
-    assert len([row for row in wire.rows() if row["kind"] == "letter"]) == 1
+    accepted = [value for value in outcomes if value["ok"]]
+    assert 1 <= len(accepted) <= 8
+    rows = [row for row in wire.rows() if row["kind"] == "letter"]
+    assert len(wire.calls()) == len(rows) == len(accepted)
+    assert sorted(value["data"]["letter"] for value in accepted) == list(range(1, len(rows) + 1))
+    assert sorted(value["data"]["record"] for value in accepted) == list(range(3, len(rows) + 3))
+    assert {row["body"] for row in rows} == {f"contender {index}" for index, value in enumerate(outcomes) if value["ok"]}
+    assert len({row["body"] for row in rows}) == len(rows)
+
+
 
 
 def test_concurrent_calls_keep_bags_and_callers_separate(wire):
     for bag in ("alpha", "beta"):
-        wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(2), bag=bag)
+        wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), bag=bag)
 
     async def exercise():
         async with wire.session() as client:
@@ -555,8 +701,12 @@ def test_concurrent_calls_keep_bags_and_callers_separate(wire):
                 client.call_tool("postbag_send", {"to": "ada", "body": "only beta", "bag": "beta"}, meta=meta(THREAD_B)),
                 client.call_tool("postbag_bags", {}),
             )
-            for result in results[:2]:
-                checked(result)
+            for result, expected in zip(results[:2], (("alpha", "ada", "bob"), ("beta", "bob", "ada"))):
+                receipt = checked_send(result)["data"]
+                assert (receipt["bag"], receipt["from"], receipt["to"]) == expected
+            for bag in ("alpha", "beta"):
+                reading = checked_read(await client.call_tool("postbag_read", {"bag": bag}))
+                assert reading["bag"] == bag
             # A simultaneous inventory may report a busy bag, but may not mix identities
             # or drop rows: every bag stays listed whether or not it was readable.
             inventory = checked(results[2], ok=not results[2].is_error)
@@ -565,6 +715,8 @@ def test_concurrent_calls_keep_bags_and_callers_separate(wire):
             listed = {row["bag"]: row for row in inventory["data"]["bags"]}
             assert set(listed) == {"alpha", "beta"}
             for row in listed.values():
+                assert set(row) == {"bag", "letters", "last_letter", "peers"}
+                assert row["letters"] is None or type(row["letters"]) is int
                 assert row["peers"] in (None, [{"name": "ada", "vendor": "codex"}, {"name": "bob", "vendor": "codex"}])
             assert inventory["ok"] is (not inventory["data"]["errors"])
     asyncio.run(exercise())
@@ -576,7 +728,7 @@ def test_concurrent_calls_keep_bags_and_callers_separate(wire):
 
 
 def test_restart_preserves_registration_and_rejoin_displaces_old_identity(wire):
-    wire.seed(codex_join("bob", THREAD_B), opened(2))
+    wire.seed(codex_join("bob", THREAD_B))
 
     async def exercise():
         async with wire.session() as client:
@@ -597,7 +749,7 @@ def test_restart_preserves_registration_and_rejoin_displaces_old_identity(wire):
 
 def test_inventory_pagination_and_bad_bag_do_not_hide_healthy_bags(wire):
     for bag in ("default", "alpha", "beta"):
-        wire.seed(opened(2), bag=bag)
+        wire.seed(bag=bag)
     wire.path("beta").write_text("{broken}\n")
 
     async def exercise():
@@ -615,6 +767,7 @@ def test_inventory_pagination_and_bad_bag_do_not_hide_healthy_bags(wire):
             assert data["total"] == 3 and data["next_offset"] is None
             assert [row["bag"] for row in data["bags"]] == ["beta"]
             assert data["bags"][0]["peers"] is None
+            assert data["bags"][0]["letters"] is None
             assert data["errors"]
             checked(await client.call_tool("postbag_read", {"bag": "beta"}), ok=False)
             checked(await client.call_tool("postbag_read", {"bag": "alpha"}))
@@ -623,8 +776,8 @@ def test_inventory_pagination_and_bad_bag_do_not_hide_healthy_bags(wire):
 
 
 def test_locked_reads_refuse_and_inventory_preserves_other_bags(wire):
-    wire.seed(opened(2))
-    wire.seed(opened(3), bag="busy")
+    wire.seed()
+    wire.seed(bag="busy")
     before = wire.path("busy").read_bytes()
 
     async def exercise():
@@ -639,8 +792,8 @@ def test_locked_reads_refuse_and_inventory_preserves_other_bags(wire):
                 inventory = partial["data"]
                 assert inventory["total"] == 2
                 rows = {row["bag"]: row for row in inventory["bags"]}
-                assert rows["default"]["peers"] == []
-                assert rows["busy"]["peers"] is None
+                assert rows["default"]["peers"] == [] and rows["default"]["letters"] == 0
+                assert rows["busy"]["peers"] is None and rows["busy"]["letters"] is None
                 assert inventory["errors"]
                 checked(await client.call_tool("postbag_read", {}))
             checked(await client.call_tool("postbag_read", {"bag": "busy"}))
@@ -650,7 +803,7 @@ def test_locked_reads_refuse_and_inventory_preserves_other_bags(wire):
 
 
 def test_native_failure_does_not_disclose_vendor_output(wire):
-    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(1))
+    wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
     before = wire.path().read_bytes()
 
     async def exercise():
@@ -699,14 +852,15 @@ def test_partial_claude_credentials_cannot_join_or_reach_a_door(wire, partial):
             checked(result, ok=False)
             for secret in partial.values():
                 assert secret not in wire_text(result)
-            checked(await client.call_tool("postbag_read", {}))
+            checked(await client.call_tool("postbag_read", {}), ok=False)
     asyncio.run(exercise())
     assert wire.rows() == []
+    assert not (wire.home / ".postbag").exists()
     assert wire.calls() == []
 
 
 def test_cli_and_mcp_share_durable_codex_door_identity(wire):
-    wire.seed(opened(2))
+    wire.seed()
 
     def cli(thread, *arguments):
         return subprocess.run(
@@ -759,11 +913,11 @@ def test_claude_socket_submission_uses_private_fake_receiver(wire):
         thread.start()
         wire.seed(codex_join("ada", THREAD_A),
                   {"kind": "join", "peer": "bob", "vendor": "claude", "socket": socket_path,
-                   "token": FAKE_TOKEN}, opened(1))
+                   "token": FAKE_TOKEN})
 
         async def exercise():
             async with wire.session() as client:
-                result = await client.call_tool("postbag_send", {"to": "bob", "body": "private challenge"}, meta=meta())
+                result = await client.call_tool("postbag_send", {"to": "bob", "body": "private challenge", "final": True}, meta=meta())
                 assert checked(result)["submission_state"] == "submitted"
                 assert socket_path not in wire_text(result) and FAKE_TOKEN not in wire_text(result)
         try:
@@ -774,5 +928,5 @@ def test_claude_socket_submission_uses_private_fake_receiver(wire):
             listener.close()
         assert payload[0] == {"type": "auth", "token": FAKE_TOKEN}
         assert "private challenge" in payload[1]["message"]["content"]
-        assert "do not send a reply" in payload[1]["message"]["content"]
+        assert "Final letter. Do not reply to this letter" in payload[1]["message"]["content"]
         assert wire.calls() == []

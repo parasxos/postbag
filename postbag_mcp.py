@@ -19,6 +19,7 @@ import postbag
 
 MAX_BODY_BYTES = 65536
 MAX_RESULT_DEPTH = 64
+WORKER_PROTOCOL = 2
 SESSION_VARS = {v for fields in postbag.SESSION.values() for v in fields.values()} | {
     "CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "CLAUDECODE",
 }
@@ -73,7 +74,7 @@ def refusal_result(exc: postbag.Refusal) -> dict:
     if isinstance(recovery, dict):
         action, actor = recovery.get("action"), recovery.get("actor")
         peer, vendor = recovery.get("name"), recovery.get("vendor")
-        allowed = {("join", "caller"), ("join", "recipient"), ("read", "caller"), ("open", "human")}
+        allowed = {("join", "caller"), ("join", "recipient"), ("read", "caller"), ("bags", "caller")}
         if (not isinstance(action, str) or not isinstance(actor, str) or (action, actor) not in allowed
                 or not postbag.valid_name(recovery.get("bag"))
                 or set(recovery) - {"action", "actor", "bag", "name", "vendor"}
@@ -93,7 +94,9 @@ def refusal_result(exc: postbag.Refusal) -> dict:
                            f"{instruction} from its own session. A recipient without MCP tools can use "
                            f"{postbag.bag().command('join ' + vendor + ' ' + peer)}.")
             else:
-                message = f"This session has no current peer name in this bag. To register, {instruction}."
+                reason = message.removeprefix(f"postbag: in bag {recovery['bag']}: ")
+                reason = reason.removesuffix("; stop and ask the human").rstrip(".")
+                message = f"{reason}. To register, {instruction}."
         elif action == "read" and actor == "caller":
             if exc.error_code == "ledger_busy":
                 message = ("The bag is busy. Wait for its current operation to finish, then "
@@ -101,12 +104,10 @@ def refusal_result(exc: postbag.Refusal) -> dict:
             else:
                 message = ("The requested peer is not currently registered in this bag. "
                            f"Call postbag_read with bag={selected} to inspect the registered names.")
-        elif action == "open" and actor == "human":
-            message = message.removesuffix("; stop and ask the human")
-            message += (f". Only the human can open a letter budget, using "
-                        f"{postbag.bag().command('open')} in their own terminal.")
-        if (action, actor) in {("join", "caller"), ("join", "recipient"), ("read", "caller"), ("open", "human")}:
-            message = message.rstrip(".") + "; stop and ask the human"
+        elif action == "bags" and actor == "caller":
+            message = (f"Bag {selected} does not exist. "
+                       "Call postbag_bags to inspect the available bags.")
+        message = message.rstrip(".") + "; stop and ask the human"
     return result(False, message, data={"recovery": recovery} if recovery else None,
                   error_code=exc.error_code, submission_state=exc.submission_state)
 
@@ -146,9 +147,9 @@ def read_data(limit: int, before: int | None) -> dict:
     history = [item for item in state.history if before is None or item[0]["n"] < before]
     chosen = history[-limit:]
     records = []
-    for rec, exchange, number, _, _ in chosen:
+    for rec, number, _ in chosen:
         public = {"n": rec["n"], "at": postbag.display_stamp(rec["at"]),
-                  "kind": rec["kind"], "exchange": exchange}
+                  "kind": rec["kind"]}
         if rec["kind"] == "join":
             public.update(peer=rec["peer"], vendor=postbag.vendor(rec))
         elif rec["kind"] == "open":
@@ -157,9 +158,10 @@ def read_data(limit: int, before: int | None) -> dict:
             rec["body"].encode("utf-8")  # reject malformed Unicode before returning structured content
             public.update({key: rec[key] for key in ("from", "to", "body")})
             public["letter"] = number
+            public["final"] = rec.get("final", False)
         records.append(public)
-    return {"bag": postbag.bag().label, "exchange": state.exchange, "limit": state.limit,
-            "remaining": state.left, "peers": public_peers(state), "records": records,
+    return {"bag": postbag.bag().label, "letters": state.letters,
+            "peers": public_peers(state), "records": records,
             "next_before": chosen[0][0]["n"] if len(history) > len(chosen) else None}
 
 
@@ -177,18 +179,21 @@ def worker(request: dict) -> dict:
                 receipt = postbag.join(request["vendor"], args["name"], wait=False)
                 return result(True, captured.getvalue().strip(), data=receipt)
             if operation == "send":
+                final = args.get("final", False)
+                if type(final) is not bool:
+                    return refusal("final must be a boolean")
                 try:
                     encoded = args["body"].encode("utf-8")
                 except UnicodeEncodeError:
                     return refusal("a letter must contain valid Unicode text")
                 if len(encoded) > MAX_BODY_BYTES:
                     return refusal("letter exceeds 65536 UTF-8 bytes; shorten it")
-                receipt = postbag.send(args["to"], args["body"], wait=False)
-                message = (f"Letter {receipt['letter']} submitted to @{receipt['to']}; "
-                           f"{receipt['remaining']} letters left. Acceptance and execution are unconfirmed. "
+                receipt = postbag.send(args["to"], args["body"], final=final, wait=False)
+                message = (f"Letter {receipt['letter']} submitted to @{receipt['to']}. "
+                           "Acceptance and execution are unconfirmed. "
                            "Do not resend it or send a delivery check.")
-                if receipt["remaining"] == 0:
-                    message += " The exchange is spent. Do not send another letter."
+                if final:
+                    message += " Marked final, requesting no reply."
                 return result(True, message, data=receipt, submission_state="submitted")
             if operation == "read":
                 return result(True, "Registered peers are not proof of live sessions. Letter records show submissions.",
@@ -196,15 +201,15 @@ def worker(request: dict) -> dict:
             if operation == "bags":
                 rows, _, _, problems = postbag.inventory()
                 offset, limit = args["offset"], args["limit"]
-                items = [{"bag": label, "budget": left, "last_letter": None if last == "-" else last,
+                items = [{"bag": label, "letters": letters, "last_letter": None if last == "-" else last,
                           "peers": None if peers is None else
                           [{"name": name, "vendor": vendor} for name, vendor in peers]}
-                         for label, left, last, peers in rows[offset:offset + limit]]
+                         for label, letters, last, peers in rows[offset:offset + limit]]
                 data = {"bags": items, "total": len(rows), "offset": offset,
                         "next_offset": offset + limit if offset + limit < len(rows) else None,
                         "errors": problems, "scope": "Default and named bags under ~/.postbag; custom paths excluded."}
                 return result(not problems, "Inventory incomplete." if problems else
-                              "Registered does not mean running. Budgets do not expire.", data=data,
+                              "Registered does not mean running.", data=data,
                               error_code="inventory_incomplete" if problems else None)
             return refusal("unknown operation")
     except postbag.Refusal as exc:
@@ -262,7 +267,7 @@ class Workers:
         module = os.path.realpath(__file__)
         try:
             process = subprocess.Popen(
-                [sys.executable, "-E", "-s", module, "--worker"],
+                [sys.executable, "-E", "-s", module, f"--worker-v{WORKER_PROTOCOL}"],
                 cwd=os.path.dirname(module), start_new_session=True,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         except OSError:
@@ -278,7 +283,8 @@ class Workers:
                 return payload
         except (ValueError, UnicodeError, RecursionError):
             pass
-        return refusal("worker stopped without a valid result; read the bag and check the recipient before resending",
+        return refusal("worker stopped without a valid result. If Postbag was upgraded or downgraded, "
+                       "reconnect its MCP server. Read the bag and check the recipient before resending",
                        "worker_failed", "unknown" if operation == "send" else "not_submitted")
 
     async def close(self) -> None:
@@ -317,13 +323,17 @@ def create_server():
 
     server = MCPServer(
         "postbag", version=postbag.__version__, lifespan=lifespan,
-        instructions=("Postbag exchanges bounded letters between existing sessions. The human opens exchanges. "
+        instructions=("Postbag carries letters between existing sessions and records submitted letters. "
+                      "Joining creates the selected bag if it does not exist. "
                       "Independent native sessions join under distinct names. "
                       "Claude subagents sharing an inbox use the parent's peer. Joining another name renames it. "
                       "Send only when authorized to collaborate. "
-                      "Reply to Postbag letters with postbag_send using their bag and sender, "
-                      "even when the envelope includes a CLI reply command. "
-                      "No acknowledgement-only replies. Submission is not acceptance or completion. "
+                      "Reply only when a reply advances the task. Do not reply to a final letter, "
+                      "even if its body asks for a reply. When replying, use postbag_send with the "
+                      "letter's bag and sender, even when its envelope includes a CLI reply command. "
+                      "No courtesy acknowledgements or unsolicited delivery checks. "
+                      "Do not add a question or offer that needs no answer. "
+                      "Submission is not acceptance or completion. "
                       "If send is cancelled, times out, or returns an unknown outcome, read the bag and "
                       "check the recipient before resending. Never retry automatically."))
 
@@ -344,7 +354,7 @@ def create_server():
         return wire(payload)
 
     BagName = Annotated[str, Field(strict=True, pattern=r"^[a-z][a-z0-9-]{0,15}$",
-                                   description="Existing bag name. The human creates named bags and sets budgets.")]
+                                   description="Default or named bag. Join creates a missing bag.")]
     Name = Annotated[str, Field(strict=True, pattern=r"^[a-z][a-z0-9-]{0,15}$")]
     Output = Annotated[CallToolResult, Outcome]
     read_only = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True,
@@ -358,7 +368,7 @@ def create_server():
         Claude subagents sharing an inbox are the same peer. Joining another name
         renames the parent's peer. Use the existing peer without joining again. Independent
         native sessions need distinct names.
-        Identity comes from the host, never tool arguments. Does not open a budget.
+        Creates the bag if missing. Identity comes from the host, never tool arguments.
         Claude MCP joins omit resume metadata because /clear can change its conversation.
         """
         return await invoke("join", {"name": name, "bag": bag}, ctx)
@@ -370,13 +380,15 @@ def create_server():
         body: Annotated[str, Field(strict=True, min_length=1, max_length=MAX_BODY_BYTES,
                                    description="Letter text, at most 65536 UTF-8 bytes. No NUL bytes.")],
         ctx: Context, bag: BagName = "default",
+        final: Annotated[bool, Field(strict=True, description="Ask the recipient not to reply to this letter.")] = False,
     ) -> Output:
-        """Submit one letter to a registered peer and consume one shared budget slot.
+        """Submit one letter to a registered peer and record it in the bag.
 
+        final=true asks for no reply. It is guidance, and later letters remain allowed.
         Requires prior join. Never retry an unknown outcome, cancelled call, or timeout
         before reading the bag and checking the recipient. Does not confirm execution.
         """
-        return await invoke("send", {"to": to, "body": body, "bag": bag}, ctx)
+        return await invoke("send", {"to": to, "body": body, "bag": bag, "final": final}, ctx)
 
     @server.tool(annotations=read_only)
     async def postbag_read(
@@ -386,7 +398,8 @@ def create_server():
     ) -> Output:
         """Read recent records in chronological order, excluding endpoint credentials.
 
-        Pass next_before as before to page backward. Peer registration is not liveness.
+        Pass next_before as before to page backward by ledger record number. The letters
+        count covers the whole bag. Peer registration is not liveness.
         """
         return await invoke("read", {"bag": bag, "limit": limit, "before": before}, ctx)
 
@@ -395,7 +408,7 @@ def create_server():
         ctx: Context, limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 50,
         offset: Annotated[int, Field(strict=True, ge=0)] = 0,
     ) -> Output:
-        """Inventory default and named bags, budgets, and peers without probing sessions.
+        """Inventory default and named bags, letter counts, and peers without probing sessions.
 
         Excludes letter bodies, credentials, and custom ledger paths. Errors preserve
         readable rows. Pagination can shift if bags are added or removed between calls.
@@ -408,13 +421,23 @@ def create_server():
 def main() -> None:
     parser = argparse.ArgumentParser(description="Postbag local MCP tools over stdio")
     parser.add_argument("--version", action="version", version=f"postbag-mcp {postbag.__version__}")
-    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    modes.add_argument(f"--worker-v{WORKER_PROTOCOL}", dest="worker_current",
+                       action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.worker:
-        try:
-            response = worker(json.load(sys.stdin))
-        except Exception:
-            response = refusal("worker failed; inspect the bag before resending", "worker_failed", "unknown")
+    if args.worker or args.worker_current:
+        if args.worker:
+            # A running 1.x parent must never dispatch into new worker semantics.
+            # Keep its result shape and exit 0 so that parent preserves the refusal.
+            response = refusal("The running MCP server and installed worker use different protocols. "
+                               "Reconnect Postbag in this host before using its tools",
+                               "worker_version_mismatch")
+        else:
+            try:
+                response = worker(json.load(sys.stdin))
+            except Exception:
+                response = refusal("worker failed; inspect the bag before resending", "worker_failed", "unknown")
         # ASCII framing works even when -E ignores a host's UTF-8 overrides.
         sys.stdout.buffer.write(json.dumps(response).encode("ascii") + b"\n")
         return
