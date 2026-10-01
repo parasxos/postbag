@@ -5,8 +5,9 @@ the same ledger and native delivery as the CLI. Joining creates a missing
 bag. Postbag does not start agents, poll recipients, or retry letters.
 Version 2.0 removes letter budgets, exchanges and the `open` command.
 
-This page describes unreleased 2.0. Its tests and native release gate still
-need to pass. The historical checks at the end describe their recorded versions.
+The installed 2.0 candidate `8b87b4f` passed the native acceptance gate and
+the package checks described below. Historical checks describe their
+recorded versions.
 
 ## Install and connect
 
@@ -304,14 +305,17 @@ an unknown outcome. Never retry automatically.
 ## Verification
 
 The `test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
-homes, fake native executables, and private Unix sockets. The 2.0 migration
-must preserve identity, isolation, secret-redaction, malformed-input, native
-failure, malformed-worker-response and cancellation coverage. It must also
-check join-created bags, noncreating missing-bag refusals, strict `final`,
-uncapped sends under the ledger lock, record cursors across legacy opens,
-and actual 1.x/2.0 worker mismatches. Current and legacy MCP wire clients are
-separate from the private parent/worker protocol. This list is a validation
-requirement, not a claim that the 2.0 suite has passed.
+homes, fake native executables, and private Unix sockets. The installed
+`8b87b4f` wheel passed **157 MCP tests** outside the source checkout. The
+extracted source archive passed **55 tests in `test_core_2.py`**. Both used
+pytest 9.1.1 and treated `ResourceWarning` as an error. The wire suite covers
+identity, isolation, secret redaction, malformed inputs and worker responses,
+native failures, cancellation, join-created bags, missing-bag refusals,
+strict `final`, concurrent sends and record cursors across legacy opens.
+Current and legacy MCP wire clients are separate from the private
+parent/worker protocol. A separate full-suite run passed **586 tests** with
+private HOME and `ResourceWarning` as an error. All **13 CI jobs** passed
+for the same commit. [Candidate CI](https://github.com/parasxos/postbag/actions/runs/36842969085).
 
 Run the suite with:
 
@@ -325,12 +329,21 @@ installation skips them. CI tests the core without that extra, runs the MCP
 suite separately, and runs the wire tests against an installed wheel outside
 the source checkout.
 
-The 2.0 native gate is pending. Before release, install the candidate in a
-clean environment, observe receipt in both directions, send a final letter
-and record the recipient's behavior during an explicit observation window.
-Then deliberately initiate an ordinary letter and observe its receipt.
-Record actual runtime versions and approval settings. One observed final
-letter does not establish that every model or future conversation will stop.
+The installed `8b87b4f` candidate passed the native gate on its first run with
+Codex 0.158.0-alpha.2.1 and Claude Code 2.1.286 on macOS 27.0.1. Seven
+model-authored tool calls made two joins and five sends. The check observed
+an initial round trip, then no Claude send and no ledger change for
+30.0668 seconds after receipt and turn completion of a final letter whose
+body asked for a reply. A deliberately initiated ordinary letter and reply
+then arrived in both directions. All three processes exited 0, with
+no forced shutdown and closed endpoints.
+
+The queue used default discovery in private state, not the personal desktop
+daemon. Claude's local receipt markers were instrumentation rather than
+Postbag replies. The final observation does not isolate the footer from the
+rest of the model context or establish that every conversation will stop.
+Exact provenance, permissions and receipt evidence are in
+[native compatibility checks](native-compatibility.md).
 
 Historical native runtime evidence and remaining limits are recorded in
 [native-compatibility.md](native-compatibility.md). The installed 1.3.0

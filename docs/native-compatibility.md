@@ -1,5 +1,79 @@
 # Native compatibility checks
 
+## 1 October 2026: installed 2.0.0 candidate
+
+The clean wheel from `8b87b4f59c990e5b550d62bde9d0a6c7c826cdff` passed the
+2.0 native acceptance gate on its first run. Both runtime
+modules came from the fresh venv's `site-packages`, matched the candidate
+hashes below and remained unchanged throughout the run. The package and
+MCP entry point reported `2.0.0`.
+
+The run used macOS 27.0.1, build 26A434, Python 3.14.6 and MCP SDK 2.2.0.
+The Codex app-server and native queue executable were
+**0.158.0-alpha.2.1**, with model `gpt-6-astra`. **Claude Code 2.1.286**
+reported model `claude-fable-5-1`. The unwrapped native queue used default
+discovery in an isolated `CODEX_HOME`, with no `--remote` override. This
+tested a private server and persisted disposable thread, not the user's
+personal desktop daemon.
+
+| Check | Observed result |
+|---|---|
+| Initial round trip | Codex sent letter 1 through MCP. Claude received it and sent letter 2, whose answer arrived in Codex. |
+| Final letter | Codex sent letter 3 with `final=true`. Its body deliberately asked for a reply. After Claude's receipt marker and turn completion, a 30.0668-second observation recorded no Claude `postbag_send` attempt and no ledger change. Both hosts remained alive. |
+| Later ordinary letter | A deliberate new instruction initiated ordinary letter 4. Claude received it and sent ordinary reply 5, which arrived in Codex. The earlier final letter did not close the bag. |
+| Tools and ledger | Seven successful model-authored tools: two joins and five sends. All sends returned `submitted`. The ledger held two joins and five letters, with only letter 3 marked final and no `open` records. |
+| Cleanup | Both clients and the private server exited 0 without forced shutdown. Native endpoints closed and the fixture authentication link was removed. |
+
+Claude's local stdout receipt markers were harness instrumentation, not
+Postbag correspondence replies. For the final letter, the native inbound
+text was not exposed. Receipt evidence was the requested local marker
+followed by recipient turn completion, and the observation window began
+after both. The run observes final-letter guidance in this context. MCP
+instructions and fixture setup were also in model context, so it does not
+isolate the footer or establish universal loop prevention. Transport
+receipts, ledger records and queue event counts alone were not treated as
+proof of recipient receipt.
+
+Codex reported a read-only command sandbox, network access disabled and
+`approvalPolicy: never`. Claude was launched with manual permissions and
+reported `permissionMode: default`. No Claude permission prompt occurred.
+`crossSessionInbound` was unset by the harness, with empty Claude setting
+sources. Native own-child classification was unobserved and is not inferred
+from the independent processes. The harness changed no user configuration
+or installation. Claude used its existing native login and could write its
+usual local caches or telemetry.
+
+Candidate provenance:
+
+```text
+wheel          9be6b61a9eba8968960f9d085794284e4a3e698dbbf0ec449aef66809cc497e9
+postbag.py     226217c88c3d05f630806b55ddae0981b349363ef02fe0441566def6e456ab5b
+postbag_mcp.py fc6a58f8a1d919827a05c9098d2272ce8539ba0a1ffa459e639cb4054e319171
+```
+
+For this exact candidate, the installed wheel passed **157 MCP tests**
+outside the checkout. The extracted source archive passed **55 tests in
+`test_core_2.py`**, including both descriptor-failure cases and the terminal
+missing-bag recovery case. Both used pytest 9.1.1, private homes, scrubbed
+session variables and `ResourceWarning` as an error. Wheel and source
+archive metadata checks passed, and all 17 root test files were present in
+the source archive with bytes matching the committed source.
+
+A separate full-suite run on the same commit passed **586 tests** in
+145 seconds, with private HOME and `ResourceWarning` as an error.
+All **13 CI jobs** passed for `8b87b4f`, covering core and MCP tests on
+macOS and Linux with Python 3.10, 3.12 and 3.14, plus package builds and
+installed-distribution checks.
+[Candidate CI](https://github.com/parasxos/postbag/actions/runs/36842969085).
+The wheel hash above identifies the native-tested candidate. Release
+documentation updates can change the distribution archive while leaving
+these tested runtime module hashes unchanged.
+
+Native Linux delivery, live Claude `/clear` and restricted spawned-agent
+targets remain unverified. Forced process-tree termination can still leave
+an unknown submission outcome. The 1.x results below retain their original
+versions, test counts and limits.
+
 ## 1 October 2026: installed 1.4.0 release candidate
 
 The clean wheel built from the release branch at `1bd4654` plus the version

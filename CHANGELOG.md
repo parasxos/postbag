@@ -4,11 +4,12 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 2.0
+## [2.0.0] - 2026-10-01
 
-This is a breaking change. Upgrade every CLI and MCP participant together
-and reconnect each MCP server. The 2.0 test run and native acceptance gate
-are pending. Earlier release evidence below applies to those versions.
+Postbag no longer uses letter budgets or exchanges. Upgrade both peers,
+including their CLI and MCP installations, and reconnect each MCP server.
+Existing bags read without migration. Historical `open` records remain as
+inert history.
 
 ### Removed
 - Remove the `open` command, exchanges, letter budgets and the human-only
@@ -58,6 +59,15 @@ are pending. Earlier release evidence below applies to those versions.
   Mutations check existing ledger modes after taking the lock. If a ledger
   becomes unwritable, a waiting mutation can refuse, while an operation past
   that check may finish and read access can remain.
+
+### Validation
+- The installed `8b87b4f` candidate passed native acceptance on its first run:
+  two-way receipt, a 30.0668-second final-letter observation and a deliberately
+  initiated ordinary round trip afterward. [Native evidence](docs/native-compatibility.md)
+  records exact provenance, runtime versions, permissions and limits.
+- The same candidate passed 586 full-suite tests, 157 installed-wheel MCP
+  tests and 55 extracted-sdist `test_core_2.py` checks. All 13 CI jobs passed.
+  [Candidate CI](https://github.com/parasxos/postbag/actions/runs/36842969085).
 
 ## [1.4.0] - 2026-10-01
 
@@ -323,7 +333,8 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/parasxos/postbag/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/parasxos/postbag/releases/tag/v2.0.0
 [1.4.0]: https://github.com/parasxos/postbag/releases/tag/v1.4.0
 [1.3.0]: https://github.com/parasxos/postbag/releases/tag/v1.3.0
 [1.2.1]: https://github.com/parasxos/postbag/releases/tag/v1.2.1
