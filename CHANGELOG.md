@@ -4,7 +4,13 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.0] - 2026-10-01
+
+Refusals now carry structured recovery guidance, so an MCP caller is told
+which tool to call and who must act, and the envelope names the MCP send
+tool for named and default bags. The native queue subprocess no longer
+inherits the sender's inbox fields. Upgrade both peers to the same version
+and reconnect their MCP servers. Existing ledgers need no migration.
 
 ### Fixed
 - Name MCP tools in recovery guidance and reply instructions for default and
@@ -17,8 +23,8 @@ uses [Semantic Versioning](https://semver.org/).
 - Preserve structured unknown outcomes for malformed or excessively nested
   worker responses. Warn shared-inbox subagents before they rename a peer.
 - Remove sender inbox and identity fields from the native queue subprocess
-  environment. Private fixtures verify this filtering. Live native acceptance
-  of the filtered environment remains to be run before release.
+  environment. Private fixtures verify this filtering, and a live cross-vendor
+  exchange with the installed candidate confirmed native delivery.
 
 ### Changed
 - Expand failure and cancellation regression coverage, isolate CLI test homes,
