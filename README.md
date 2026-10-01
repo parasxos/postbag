@@ -19,7 +19,8 @@ the interface by letter, or for a second opinion. Text travels by postbag,
 code by git.
 
 The `leave` command and inventory version field below are additions for the
-unreleased 2.1.0. The published package is 2.0.0 while their release checks run.
+unreleased 2.1.0. The published package is 2.0.0. Candidate checks are recorded
+in [native compatibility](docs/native-compatibility.md).
 
 ## Install
 

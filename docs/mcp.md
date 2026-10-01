@@ -5,11 +5,10 @@ the same ledger and native delivery as the CLI. Joining creates a missing
 bag. Postbag does not start agents, poll recipients, or retry letters.
 Version 2.0 removes letter budgets, exchanges and the `open` command.
 The unreleased 2.1 interface adds `postbag_leave` and the inventory's
-worker version field. These additions still require their release checks.
+worker version field. The candidate has passed the package, fixture and
+native checks below. It has not been published.
 
-The installed 2.0 candidate `8b87b4f` passed the native acceptance gate and
-the package checks described below. Historical checks describe their
-recorded versions.
+Historical checks describe their recorded versions.
 
 ## Install and connect
 
@@ -355,17 +354,21 @@ an unknown outcome. Never retry automatically.
 ## Verification
 
 The `test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
-homes, fake native executables, and private Unix sockets. The installed
-`8b87b4f` wheel passed **157 MCP tests** outside the source checkout. The
-extracted source archive passed **55 tests in `test_core_2.py`**. Both used
-pytest 9.1.1 and treated `ResourceWarning` as an error. The wire suite covers
+homes, fake native executables, and private Unix sockets. The frozen 2.1
+source at `6489151` passed **665 tests** with private HOME and
+`ResourceWarning` as an error. Installed-wheel runs outside the source
+checkout covered **184 unique MCP cases**. The candidate source archive
+passed **52 core leave tests**. These checks used pytest 9.1.1. Offline Linux
+fixtures covered the same 184 MCP and 52 leave cases. The wire suite covers
 identity, isolation, secret redaction, malformed inputs and worker responses,
 native failures, cancellation, join-created bags, missing-bag refusals,
-strict `final`, concurrent sends and record cursors across legacy opens.
+strict `final`, concurrent sends, record cursors across legacy opens,
+withdrawal recovery, leave redaction and failures after a leave is recorded.
 Current and legacy MCP wire clients are separate from the private
-parent/worker protocol. A separate full-suite run passed **586 tests** with
-private HOME and `ResourceWarning` as an error. All **13 CI jobs** passed
-for the same commit. [Candidate CI](https://github.com/parasxos/postbag/actions/runs/36842969085).
+parent/worker protocol. Actual 2.0 modules were also checked against the
+candidate in both parent/worker pairings. A 2.0 reader cleanly refused a
+ledger containing leave. Exact test snapshots and combined coverage are
+recorded in [native compatibility](native-compatibility.md).
 
 Run the suite with:
 
@@ -379,14 +382,17 @@ installation skips them. CI tests the core without that extra, runs the MCP
 suite separately, and runs the wire tests against an installed wheel outside
 the source checkout.
 
-The installed `8b87b4f` candidate passed the native gate on its first run with
-Codex 0.158.0-alpha.2.1 and Claude Code 2.1.286 on macOS 27.0.1. Seven
-model-authored tool calls made two joins and five sends. The check observed
-an initial round trip, then no Claude send and no ledger change for
-30.0668 seconds after receipt and turn completion of a final letter whose
-body asked for a reply. A deliberately initiated ordinary letter and reply
-then arrived in both directions. All three processes exited 0, with
-no forced shutdown and closed endpoints.
+The installed `391fed5` candidate passed the native gate with Codex 0.159.2
+and Claude Code 2.1.286 on macOS 27.0.1. Its runtime modules are unchanged at
+`6489151`. Ten model-authored calls made three joins, one leave and six send
+attempts. Five letters were submitted and observed by their recipients.
+The send after leave refused with the departure time and an unchanged
+ledger. A deliberate rejoin restored delivery and a reply. The final-letter
+check observed no recipient send or ledger change for 30.1146 seconds after
+receipt and turn completion. All three processes exited 0 with closed
+endpoints and no forced shutdown. A preceding attempt was rejected by an
+overly strict harness comparison of a valid `@` address. The fresh passing
+run used a corrected harness and the same product code.
 
 The queue used default discovery in private state, not the personal desktop
 daemon. Claude's local receipt markers were instrumentation rather than
