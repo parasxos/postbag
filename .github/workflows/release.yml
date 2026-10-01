@@ -6,9 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: An existing GitHub release tag to publish to PyPI, for example v1.0.0
+        description: An existing release tag to publish, for example v2.2.0
         required: true
         type: string
+      registry_only:
+        description: Register an already published PyPI release without uploading it again
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -82,7 +86,7 @@ jobs:
     # existing tag. PyPI trusts this workflow through the "pypi" environment
     # (trusted publishing, no credentials stored anywhere).
     needs: publish
-    if: always() && (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
+    if: always() && !cancelled() && ((github.event_name == 'workflow_dispatch' && !inputs.registry_only) || needs.publish.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi
@@ -107,3 +111,114 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist
+
+  registry:
+    # A registry retry must not upload an existing version to PyPI again.
+    # Read metadata from the requested release tag, never the dispatch branch.
+    needs: pypi
+    if: always() && !cancelled() && (needs.pypi.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.registry_only))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Check release tag syntax
+        run: |
+          python3 - <<'PY'
+          import os, re
+          if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', os.environ['RELEASE_TAG']):
+              raise SystemExit('Expected a stable release tag such as v2.2.0')
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Verify tagged registry metadata
+        run: |
+          python - <<'PY'
+          import ast, json, os, pathlib, re
+          version = os.environ['RELEASE_TAG'][1:]
+          tree = ast.parse(pathlib.Path('postbag.py').read_text(encoding='utf-8'))
+          versions = [ast.literal_eval(node.value) for node in tree.body
+                      if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == '__version__'
+                              for target in node.targets)]
+          server = json.loads(pathlib.Path('server.json').read_text(encoding='utf-8'))
+          assert versions == [version], 'Tag and package version differ'
+          assert server['version'] == version, 'Tag and server version differ'
+          assert server['name'] == 'io.github.parasxos/postbag', 'Unexpected registry namespace'
+          packages = [p for p in server['packages'] if p['registryType'] == 'pypi']
+          assert len(packages) == 1, 'Expected one PyPI package'
+          package = packages[0]
+          assert package['identifier'] == 'postbag', 'PyPI identifier must not include extras'
+          assert package['version'] == version, 'Tag and PyPI package version differ'
+          assert package.get('registryBaseUrl', 'https://pypi.org') == 'https://pypi.org'
+          assert package['runtimeHint'] == 'uvx'
+          assert package['transport'] == {'type': 'stdio'}
+          # Descriptions are documentation; every operational field stays exact.
+          runtime_arguments = [{key: value for key, value in argument.items() if key != 'description'}
+                               for argument in package['runtimeArguments']]
+          assert runtime_arguments == [
+              {'type': 'named', 'name': '--with', 'value': f'postbag[mcp]=={version}'}
+          ], 'Pin the optional MCP dependencies to the published package version'
+          assert package['packageArguments'] == [{'type': 'positional', 'value': 'mcp'}]
+          marker = rf'mcp-name:\s*{re.escape(server["name"])}(?=$|\s|<|-->)'
+          assert re.search(marker, pathlib.Path('README.md').read_text(encoding='utf-8')), 'README ownership marker is missing'
+          print(f'Validated tagged metadata for {server["name"]}@{version}')
+          PY
+      - name: Wait for the published PyPI metadata
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, re, time, urllib.error, urllib.request
+          version = os.environ['RELEASE_TAG'][1:]
+          server = json.loads(pathlib.Path('server.json').read_text(encoding='utf-8'))
+          marker = rf'mcp-name:\s*{re.escape(server["name"])}(?=$|\s|<|-->)'
+          url = f'https://pypi.org/pypi/postbag/{version}/json'
+          expected = {f'postbag-{version}-py3-none-any.whl', f'postbag-{version}.tar.gz'}
+          for attempt in range(12):
+              try:
+                  request = urllib.request.Request(url, headers={'Accept': 'application/json'})
+                  with urllib.request.urlopen(request, timeout=10) as response:
+                      metadata = json.load(response)
+              except urllib.error.HTTPError as error:
+                  if error.code not in {404, 429} and not 500 <= error.code < 600:
+                      raise
+                  reason = f'HTTP {error.code}'
+              except (urllib.error.URLError, TimeoutError) as error:
+                  reason = type(error).__name__
+              else:
+                  assert metadata['info']['version'] == version, 'PyPI version differs from tag'
+                  assert re.search(marker, metadata['info']['description']), 'Published PyPI README ownership marker is missing'
+                  available = {item['filename'] for item in metadata['urls'] if not item.get('yanked', False)}
+                  if expected <= available:
+                      print(f'PyPI {version} exposes both distributions and the ownership marker')
+                      break
+                  reason = 'release distributions are not both visible'
+              if attempt == 11:
+                  raise SystemExit(f'PyPI metadata not ready after 12 attempts: {reason}')
+              print(f'PyPI metadata not ready ({reason}); retrying in 10 seconds')
+              time.sleep(10)
+          PY
+      - name: Install the pinned registry publisher
+        run: |
+          mkdir -p "$RUNNER_TEMP/mcp-registry"
+          cd "$RUNNER_TEMP/mcp-registry"
+          curl --fail --location --retry 3 --connect-timeout 10 --max-time 60 \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz \
+            --output publisher.tar.gz
+          printf '%s  %s\n' a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc publisher.tar.gz | sha256sum --check -
+          tar -xzf publisher.tar.gz mcp-publisher
+      - name: Register the exact tagged server metadata
+        run: |
+          cd "$RUNNER_TEMP/mcp-registry"
+          # The pinned publisher stores its token in the ephemeral runner's home.
+          trap 'rm -f "$HOME/.config/mcp-publisher/token.json"' EXIT
+          timeout 60 ./mcp-publisher login github-oidc --registry=https://registry.modelcontextprotocol.io
+          # Do not retry an ambiguous publication automatically.
+          timeout 120 ./mcp-publisher publish "$GITHUB_WORKSPACE/server.json"

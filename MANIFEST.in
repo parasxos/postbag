@@ -11,3 +11,4 @@ include test_leave.py
 include docs/demo.tape docs/demo-env.sh docs/readme-research.md
 include docs/native-compatibility.md
 include docs/mcp.md
+include server.json llms-install.md

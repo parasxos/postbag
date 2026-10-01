@@ -1,6 +1,7 @@
 # Local MCP interface
 
-The optional `postbag-mcp` command exposes five tools over stdio. It uses
+The optional `postbag-mcp` command exposes five tools over stdio. Version 2.2
+also accepts `postbag mcp`, which starts the same server. It uses
 the same ledger and native delivery as the CLI. Joining creates a missing
 bag. Postbag does not start agents, poll recipients, or retry letters.
 Version 2.0 removes letter budgets, exchanges and the `open` command.
@@ -9,6 +10,9 @@ worker version field. The candidate has passed the package, fixture and
 native checks below.
 
 Historical checks describe their recorded versions.
+
+The launcher and registry configuration described here are prepared for
+2.2.0. Until it is published, use `postbag-mcp` from the current 2.1 release.
 
 ## Install and connect
 
@@ -27,6 +31,10 @@ The extra installs MCP Python SDK 2.2 or later within major version 2.
 Installing Postbag without the extra keeps the CLI free of runtime
 dependencies. `postbag-mcp` then explains which extra is missing.
 
+For an installed package, `postbag mcp` is equivalent to `postbag-mcp`.
+It is a server launcher, not a bag operation. Apart from `--help`, it takes
+no arguments and refuses `--bag`. The host selects a bag in each tool call.
+
 Use the absolute executable path in each host's configuration. For Codex:
 
 ```toml
@@ -40,6 +48,51 @@ For Claude Code:
 ```sh
 claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/postbag-mcp
 ```
+
+### Run with uvx
+
+With [uv installed](https://docs.astral.sh/uv/getting-started/installation/),
+the host can download and run a fixed version without a persistent pipx
+installation. The MCP extra and command select the same version:
+
+```toml
+[mcp_servers.postbag]
+command = "/absolute/path/to/uvx"
+args = ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+tool_timeout_sec = 60
+```
+
+For Claude Code:
+
+```sh
+claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/uvx --with 'postbag[mcp]==2.2.0' postbag@2.2.0 mcp
+```
+
+Generic stdio configuration uses the same command and arguments:
+
+```json
+{
+  "mcpServers": {
+    "postbag": {
+      "command": "/absolute/path/to/uvx",
+      "args": ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+    }
+  }
+}
+```
+
+Choose either the installed command or uvx for this server, so the host does
+not load duplicate tool catalogs. uvx needs network access to resolve and
+download packages on first use. Update both version pins together when
+upgrading. It does not install a `postbag` command on the session's shell
+`PATH`. Install the CLI too if a peer will use shell reply commands.
+
+Postbag can initialize and list its tools without a session identity.
+`join`, `leave` and `send` require the supported host to supply the native
+identity. A generic MCP client or a container with no access to the host's
+session doors is not a replacement peer.
+
+### Session identity and permissions
 
 Restart or reconnect the MCP server after changing its configuration or
 upgrading Postbag. Do not configure session IDs, socket paths, or tokens by

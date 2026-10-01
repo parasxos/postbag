@@ -4,6 +4,22 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `postbag mcp` starts the existing stdio MCP server without changing the
+  five bag operations. It takes no bag option or operational arguments and keeps
+  the same optional MCP dependency and missing-extra guidance.
+- MCP Registry metadata and release automation, with a pinned uvx launch
+  command that installs the MCP extra from the same package version.
+- Agent installation instructions, marketplace artwork and a current CLI
+  demo using temporary state and fake native doors.
+
+### Changed
+- Refresh the README with direct installation, MCP setup and supported-host
+  information. Directory publication and tool introspection do not establish
+  native message delivery or expand the supported peers.
+
 ## [2.1.0] - 2026-10-01
 
 Leaving a bag is now a recorded withdrawal of the caller's name. MCP

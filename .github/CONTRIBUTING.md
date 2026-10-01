@@ -62,6 +62,11 @@ Commit subjects are short and imperative.
 
 1. Bump `__version__` in `postbag.py`, finalize the `CHANGELOG.md` entry, and
    pin README links to current documentation at the new tag for PyPI.
+   Match `server.json`'s server version, PyPI package version, and
+   `postbag[mcp]==<version>` runtime argument to that version. Keep the
+   `mcp-name: io.github.parasxos/postbag` ownership marker in the README that
+   goes into the distribution. The registry checks the published PyPI
+   description, not the repository's current README.
    Keep historical examples and evidence linked to their original versions.
    Remove draft notices only when the checks below establish release readiness.
 2. CI green on `main`.
@@ -86,7 +91,49 @@ Commit subjects are short and imperative.
    not stand in for these installed-version checks.
    Do not tag until these native checks pass. Historical 1.x checks do not
    establish 2.0 acceptance, and 2.0 checks do not establish 2.1 acceptance.
-4. `git tag v<version> && git push origin v<version>`. The release
+   For 2.2, run the clean installed candidate through `postbag mcp`, confirm
+   its tool catalog matches `postbag-mcp`, and perform the two-way, final,
+   and later ordinary letter checks above through that launcher. Successful
+   initialization alone does not establish native acceptance.
+4. `git tag -a v<version> -m "Release <version>"` then
+   `git push origin v<version>`. The release
    workflow builds the wheel and sdist, checks them, publishes a GitHub
    release with checksums, then publishes those same assets to PyPI
-   through trusted publishing.
+   through trusted publishing. After PyPI succeeds, it registers the tagged
+   `server.json` in the official MCP Registry through GitHub OIDC.
+
+### Registry publication and retries
+
+The registry entry uses the PyPI identifier `postbag`, with `uvx` as its
+runtime. `--with postbag[mcp]==<version>` installs the optional MCP
+dependencies, and the package argument `mcp` starts the stdio server. A
+client must preserve those runtime and package arguments when constructing
+the launch command. Extras do not belong in the registry's PyPI identifier.
+See the [registry package rules](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx)
+and [uv tool requirements](https://docs.astral.sh/uv/concepts/tools/#including-additional-dependencies).
+
+The release job verifies tag, package, and registry versions before
+registering. It waits for the versioned PyPI API to expose both distributions
+and the README ownership marker. Transient failures get at most 12 attempts,
+with 10 seconds between requests and a 10 second request timeout. A missing
+ownership marker or version mismatch stops immediately. Registration itself
+runs once, so a timeout does not silently trigger another publication.
+
+If PyPI succeeded but registration failed, inspect the
+[registry entry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.parasxos/postbag)
+and the workflow logs before retrying. A failed or interrupted publication
+can have reached the registry. Confirm the exact version and metadata, not
+just the search result's latest entry. To retry only registration, dispatch
+the Release workflow with the existing `vX.Y.Z` tag and `registry_only: true`.
+This reads `server.json` from that tag and skips another PyPI upload. Leaving
+the option false publishes an existing GitHub release's assets to PyPI first.
+Do not reuse that mode for a version already uploaded to PyPI.
+
+The registry job has only `contents: read` and `id-token: write` permissions.
+It uses the official publisher pinned to version 1.8.1 and a checked SHA-256
+archive digest. When changing that pin, verify the digest against the
+[official release](https://github.com/modelcontextprotocol/registry/releases/tag/v1.8.1),
+review its OIDC behavior, and test the workflow without logging in or
+publishing. The token is removed from the ephemeral runner after the attempt.
+GitHub release, PyPI publication, and registry registration are separate
+outcomes. Confirm all three before reporting a fully listed release.
