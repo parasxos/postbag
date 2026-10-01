@@ -97,11 +97,6 @@ def prepare_pair(cli, *, same_vendor=False):
     return sender, recipient, sender_extra
 
 
-def prepare_exchange(cli, limit=None, *, same_vendor=False):
-    """Alias kept for the MCP test files, which still use the 1.x name and may pass the old limit."""
-    return prepare_pair(cli, same_vendor=same_vendor)
-
-
 def rows(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
