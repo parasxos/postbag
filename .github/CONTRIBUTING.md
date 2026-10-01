@@ -1,7 +1,7 @@
 # Contributing
 
 Read [CONCEPT.md](../CONCEPT.md) first. It is short and it is the
-specification. Four nouns, four verbs, one ledger per bag and native doors.
+specification. Four nouns, five verbs, one ledger per bag and native doors.
 Agents and their hosts decide when to stop. Any two supported sessions, of
 the same vendor or not, are the supported use. Three or more is experimental. A change that adds a noun
 has to name the capability the existing nouns cannot provide.
@@ -32,7 +32,7 @@ MCP wire tests require the optional `mcp` extra and skip without it.
   leave a submitted letter unrecorded. Recipient permissions still apply.
   Do not claim sender permissions or consume delivery notices.
 - `join` creates a missing bag. Argument and identity refusals create nothing.
-  Missing-bag `send` and `read` create no files or directories. Preserve any
+  Missing-bag `send`, `leave` and `read` create no files or directories. Preserve any
   partial file after an I/O failure instead of deleting another caller's state.
 - Create ledger files as `0600` and preserve existing modes. Refuse mutations
   when an existing file grants group or other access or lacks owner read and
@@ -42,6 +42,10 @@ MCP wire tests require the optional `mcp` extra and skip without it.
   Change it and its tests together. `final` is a strict Boolean and an advisory
   request not to reply to that letter. It must not disable later explicit sends.
 - Never print door credentials. Inventory also excludes letter bodies.
+- `leave` withdraws the caller's current name under the same lock as `send`.
+  It creates nothing and contacts no native door. Replay requires that the
+  named peer is still held by the recorded identity. Leave rows retain record
+  numbers but do not count as letters. Queued letters do not authorize rejoining.
 - `bags` adds no state and probes no sessions. It skips waiting on a busy
   ledger, reports unavailable bags, continues the inventory, and exits 1.
 - Legacy ledgers must keep reading without rewriting. Historical `open` rows
@@ -74,8 +78,14 @@ Commit subjects are short and imperative.
    Preserve recipient policy and do not claim sender permissions to make
    delivery pass. Distinguish a submitted letter from one visibly received.
    Keep the evidence in [native compatibility checks](../docs/native-compatibility.md).
+   For 2.1, observe a leave between two deliveries: A sends to B, B leaves,
+   A's next send refuses with the departure time, B deliberately joins again,
+   and A's next send is visibly received. Observe a reply in the other direction.
+   Also test both actual 2.0/2.1 parent and worker pairings, and confirm that a
+   2.0 reader cleanly refuses a bag containing a leave. Fixture tests must
+   not stand in for these installed-version checks.
    Do not tag until these native checks pass. Historical 1.x checks do not
-   establish 2.0 acceptance.
+   establish 2.0 acceptance, and 2.0 checks do not establish 2.1 acceptance.
 4. `git tag v<version> && git push origin v<version>`. The release
    workflow builds the wheel and sdist, checks them, publishes a GitHub
    release with checksums, then publishes those same assets to PyPI

@@ -4,6 +4,29 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- CLI `leave` and MCP `postbag_leave` withdraw the caller's current name
+  from one bag. They preserve its history and session, contact no native
+  transport, and append a leave record under the same lock as sending.
+  Queued letters can still arrive. Rejoin only when the human asks to resume.
+- MCP inventory data includes `version` for the installed core loaded by
+  that call's worker, including empty and partial inventories. It does not
+  prove that the running parent has refreshed its tool catalog.
+
+### Changed
+- Preserve the core refusal reason when directing an MCP caller to read
+  the bag, including departure times and names that moved to another door.
+
+### Compatibility
+- Upgrade every reader of a bag before recording its first leave. Readers
+  older than 2.1 refuse a bag containing that record. Existing bags need no
+  rewrite. Downgrading does not undo a leave, and deleting leave rows would
+  restore withdrawn registrations. Unknown record kinds remain errors.
+- Reconnect MCP servers after upgrading to expose the new tool. The internal
+  worker protocol remains 2 and does not negotiate tool availability.
+
 ## [2.0.0] - 2026-10-01
 
 Postbag no longer uses letter budgets or exchanges. Upgrade both peers,

@@ -73,7 +73,7 @@ def checked_read(result):
     assert data["next_before"] is None or type(data["next_before"]) is int
     for row in data["records"]:
         fields = {"n", "at", "kind"}
-        if row["kind"] == "join":
+        if row["kind"] in {"join", "leave"}:
             fields |= {"peer", "vendor"}
         elif row["kind"] == "open":
             fields |= {"limit"}
@@ -182,7 +182,7 @@ def test_sdk_stdio_catalog_and_readonly_empty_inventory(wire, mode):
     async def exercise():
         async with wire.session(mode=mode) as client:
             tools = {tool.name: tool for tool in (await client.list_tools()).tools}
-            assert set(tools) == {"postbag_join", "postbag_send", "postbag_read", "postbag_bags"}
+            assert set(tools) == {"postbag_join", "postbag_leave", "postbag_send", "postbag_read", "postbag_bags"}
             assert set(tools["postbag_join"].input_schema["properties"]) == {"name", "bag"}
             assert set(tools["postbag_send"].input_schema["properties"]) == {"to", "body", "bag", "final"}
             assert set(tools["postbag_read"].input_schema["properties"]) == {"bag", "limit", "before"}
@@ -195,6 +195,7 @@ def test_sdk_stdio_catalog_and_readonly_empty_inventory(wire, mode):
             assert tools["postbag_read"].annotations.read_only_hint is True
             assert tools["postbag_bags"].annotations.read_only_hint is True
             result = checked(await client.call_tool("postbag_bags", {}))["data"]
+            assert result["version"] == importlib.import_module("postbag").__version__
             assert result["bags"] == [] and result["total"] == 0
             assert result["next_offset"] is None
             missing = checked(await client.call_tool("postbag_read", {}), ok=False)
