@@ -3,7 +3,7 @@
 ## What postbag trusts
 
 postbag trusts the local OS account and the sessions that joined the bag.
-CLI `join` and `send` use environment variables the vendors export inside
+CLI `join`, `send` and `leave` use environment variables the vendors export inside
 their own sessions. MCP uses trusted host metadata or inherited inbox fields.
 These fields select the caller's door. They are not authentication against
 another program running as the same user. A name is an address, not
@@ -63,6 +63,15 @@ the lock, so an existing waiter may refuse. An operation past that check
 may finish, and read access can remain. Postbag does not restore the mode
 of an existing file. None of these actions recalls queued letters or cancels
 a submission already in flight.
+
+`leave` withdraws one door's registration in one bag. It blocks later sends
+to and from that registration until a join makes the door addressable again.
+It does not close the native inbox, change registrations in other bags,
+recall queued letters or interrupt a send already holding the ledger lock.
+Claude subagents sharing an inbox withdraw the same registration. The leave
+record preserves its door fields so replay can check the current binding.
+This checks consistency, not authenticity against someone who can edit the
+ledger. Do not rejoin after a deliberate leave unless the human asks to resume.
 
 ## What "delivered" means
 

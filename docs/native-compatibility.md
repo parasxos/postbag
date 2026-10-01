@@ -1,5 +1,103 @@
 # Native compatibility checks
 
+## 1 October 2026: installed 2.1.0.dev0 candidate
+
+The clean wheel from `391fed550228b67d3d0a796418e2137865043f16` passed
+the leave acceptance gate in fresh native sessions. Both runtime modules
+came from the isolated installation's `site-packages`, matched the hashes
+below and remained unchanged. The package, core and MCP entry point reported
+`2.1.0.dev0`. Later commit `6489151` added tests without changing either
+runtime module. This is candidate evidence, not a published 2.1 release.
+
+The run used macOS 27.0.1, build 26A434, Python 3.14.6 and MCP SDK 2.2.0.
+The app-server and queue executable reported **0.159.2**, with model
+`gpt-6.1-sol`. **Claude Code 2.1.286** reported `claude-fable-5-1`.
+The unwrapped `codex queue` used default discovery in a private
+`CODEX_HOME`, without `--remote`. It reached a disposable persisted thread.
+The user's personal desktop daemon was not tested.
+
+| Check | Observed result |
+|---|---|
+| Initial exchange | Each model joined through MCP. The first letter and its reply were observed in their respective recipient sessions. |
+| Final letter | Letter 3 had `final=true` and a body requesting a reply. After the recipient's receipt marker and turn completion, 30.1146 seconds elapsed with no recipient send attempt and no ledger change. Both hosts stayed alive. |
+| Leave | An explicit harness instruction caused the recipient's own `postbag_leave` call. Its receipt named that peer, recorded line 6 and had `submission_state=null`. |
+| Send after leave | The sender's next model-authored send returned `refused` and `not_submitted`, with the recorded departure time and `read/caller` recovery. The ledger remained byte-identical. No recipient receipt marker appeared. |
+| Deliberate rejoin | A later harness instruction caused the recipient to join again, at record 7. A new ordinary letter and reply were then observed in both directions. |
+| Accounting | Ten model-authored calls produced three joins, one leave and five submitted letters. The sixth send attempt was refused. The nine records had contiguous line numbers. Letter ordinals remained 1 through 5 across the leave and rejoin. Only letter 3 was final. |
+| Cleanup | Both clients and the private server exited 0 without forced shutdown. Native endpoints closed, the private authentication alias was removed and no extra correspondence appeared during shutdown. |
+
+Receipt evidence was correlated with the exact model tool arguments,
+structured outcomes, ledger records and completed recipient turns.
+The harness supplied leave and resumption instructions as user turns.
+Claude's local stdout receipt markers were requested by the harness and
+were not Postbag replies. Its native inbound text was not exposed.
+Submission receipts and ledger entries alone were not treated as proof of
+recipient receipt. The final observation covers this run and its stated
+window. It does not isolate the footer from other model instructions or
+prove that all conversations stop. Leave did not test recall of queued
+letters, which remains unsupported.
+
+The sender reported a read-only command sandbox, disabled network access
+and `approvalPolicy: never`. Claude was launched with `--permission-mode manual`
+and reported `permissionMode: default`, with no permission prompt. The harness left
+`crossSessionInbound` unset and used empty Claude setting sources. Native
+own-child classification was unobserved. The harness changed no personal
+configuration or installation. Claude used its existing login and could
+write its usual caches or telemetry.
+
+The first native attempt completed the behavior checks but failed its final
+verification because the harness compared the supported `@alpha` argument
+literally with the ledger's normalized `alpha`. That failed report was
+preserved. The harness was corrected to accept either documented spelling,
+while still requiring exact bag, body, argument keys and Boolean flags.
+Its offline checks and independent review rejected malformed alternatives.
+The successful run used fresh sessions and the same wheel. No product code
+changed between attempts.
+
+Candidate provenance:
+
+```text
+wheel          d842e5419bb6d43b4da087f3f908eee015c01abb903217b55e722a4d9ef98ab0
+sdist          b3421e7780c176bb034929a27a42fa154c400af67df265b975927e4d677a631d
+postbag.py     85340f843b4b8298e568b0484cdf7ffa96dccb0c50e196c47e280750306dd456
+postbag_mcp.py 1884192c471d8e5d0330a5f2ea8f481af032ddcdea63a8251df023ae10efc07f
+harness        9a0e593632b8a08a90138898fa151094eefdf31a312c2e22a818962a6e1eb16f
+```
+
+Package and fixture checks:
+
+- The frozen source at `6489151` passed **665 tests** on macOS with Python
+  3.14.6, private HOME and `ResourceWarning` as an error.
+- An installed wheel with the same runtime modules passed **181 MCP tests**
+  outside the checkout. Rerunning the two subsequently changed files passed
+  **38 tests**, covering **184 unique MCP cases** across the two runs.
+- The candidate source archive passed all **52 core leave tests**. All 20
+  root test files were included, matching the committed source. Wheel and
+  source archive metadata checks passed.
+- Offline Linux arm64 containers with Python 3.14.7, MCP 2.2.0 and a non-root
+  user covered **184 unique MCP cases and 52 core leave cases**. Later runs
+  covered changed files, with byte comparisons confirming unchanged files.
+  Network access was disabled and fixtures used private homes. These runs
+  tested no native vendor delivery on Linux.
+
+Separate stdio checks used the actual published 2.0 modules and the candidate
+modules in isolated fixtures. The 2.0 parent retained four tools while its
+new worker reported `2.1.0.dev0` through inventory. A new parent using the
+2.0 worker refused leave as `invalid_input`, with a null submission state,
+unchanged ledger and a successful subsequent read. The 2.0 CLI and MCP
+reader refused a ledger containing a leave. Its send refused before native
+submission and its inventory marked the bag unavailable. All four cases
+made zero native transport calls. These are version compatibility checks,
+separate from the installed candidate's native exchange above.
+
+An initial test run across a concurrently edited checkout encountered a
+version change. The first frozen snapshot then found one outdated test
+assertion that hardcoded `2.0.0`. Both results were retained and superseded
+by the corrected frozen-source run above. CI results are not claimed here.
+Native Linux delivery, a live Claude `/clear` transition and restricted
+spawned-agent targets remain unverified. Forced process-tree termination can
+still leave an unknown submission outcome.
+
 ## 1 October 2026: installed 2.0.0 candidate
 
 The clean wheel from `8b87b4f59c990e5b550d62bde9d0a6c7c826cdff` passed the

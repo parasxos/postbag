@@ -31,6 +31,7 @@ CALLS = [
     ("send", {"to": "bob", "body": "protocol fixture", "bag": "default", "final": True}),
     ("read", {"bag": "default", "limit": 20, "before": None}),
     ("bags", {"limit": 50, "offset": 0}),
+    ("leave", {"bag": "default"}),
 ]
 
 

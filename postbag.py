@@ -5,6 +5,7 @@
     postbag send [--final] @bob "text"  # send from this session's registered name; "-" reads stdin
     postbag read [N]              # the ledger, or its last N records
     postbag bags                  # local bags, their letters and registered peers
+    postbag leave                 # inside a session: withdraw this door's name from the bag
 """
 import argparse
 import errno
@@ -23,7 +24,7 @@ from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
@@ -174,7 +175,7 @@ _held = None  # the ledger's open handle while this process holds the exclusive 
 
 
 def check(rec, i, path):
-    """Refuse a record that is not one of the three kinds in its expected shape."""
+    """Refuse a record that is not one of the four kinds in its expected shape."""
     def text(v):
         return isinstance(v, str) and v != ""
 
@@ -190,9 +191,9 @@ def check(rec, i, path):
 
     ok = isinstance(rec, dict) and rec.get("n") == i and count(rec.get("n")) and stamp(rec.get("at"))
     kind = rec.get("kind") if ok else None
-    if kind == "join":
+    if kind in ("join", "leave"):  # a leave names the door it withdraws as its join did, vendor spelled out
         peer = rec.get("peer")
-        source = rec.get("vendor", peer)
+        source = rec.get("vendor", peer if kind == "join" else None)  # only old joins used the vendor as their name
         ok = (valid_name(peer) and text(source) and source in SESSION
               and (peer not in PEERS or peer == source)
               and all(text(rec.get(f)) for f in SESSION[source]))
@@ -265,14 +266,15 @@ def exposed(mode):
 
 
 @contextmanager
-def ledger(create=False, *, wait=True):
+def ledger(create=False, *, wait=True, verb="send"):
     """The ledger held exclusively. Yields the function that appends one record.
 
     Only join passes create=True. Creation is established by one O_CREAT|O_EXCL open and
     by nothing else: when that open finds the file already there, the file is opened as it
     is. A created file gets mode 0600. An existing file is never re-moded, and a mode that
     grants group or other access, or lacks owner read and write, refuses before any parse,
-    knock or append. Without create, a missing ledger refuses and points to join.
+    knock or append. Without create, a missing ledger refuses as the named verb does: send
+    points to join, every other verb points to bags.
     """
     global _held
     path = ledger_path()
@@ -297,7 +299,7 @@ def ledger(create=False, *, wait=True):
             fd = os.open(path, flags)
     except FileNotFoundError as e:
         if not create:
-            bag().absent("send")
+            bag().absent(verb)
         fail(f"cannot open the ledger ({e})")
     except OSError as e:
         fail(f"cannot open the ledger ({e})")
@@ -333,7 +335,7 @@ class Snapshot:
     peers maps each held name to its join record. letters counts the bag's letters.
     history holds one (rec, letter, note) per record: letter is the record's position
     among the bag's letters, or None for the other kinds, and note is the (renamed, taken)
-    pair of a join, or ([], None) otherwise.
+    pair of a join, or ([], None) otherwise. A leave removes a binding and is ([], None).
     """
 
     def __init__(self, rows):
@@ -344,14 +346,41 @@ class Snapshot:
             note, letter = ([], None), None
             if rec["kind"] == "join":
                 note = self.register(rec)
+            elif rec["kind"] == "leave":
+                self.withdraw(rec)
             elif rec["kind"] == "letter":
                 self.letters += 1
                 letter = self.letters
             self.history.append((rec, letter, note))
 
-    def joins(self, key):
-        """This door's join records, oldest first."""
-        return [row for row, *_ in self.history if row["kind"] == "join" and identity(row) == key]
+    def transitions(self, key):
+        """This door's join and leave records, oldest first."""
+        return [row for row, *_ in self.history if row["kind"] in ("join", "leave") and identity(row) == key]
+
+    def last(self, peer):
+        """The latest join or leave naming this peer, or None."""
+        return next((row for row, *_ in reversed(self.history)
+                     if row["kind"] in ("join", "leave") and row["peer"] == peer), None)
+
+    def left(self, peer):
+        """The leave record that is this name's latest transition, or None."""
+        last = self.last(peer)
+        return last if last is not None and last["kind"] == "leave" else None
+
+    def withdraw(self, rec):
+        """Replay one leave: the name must still be held by exactly the door that leaves."""
+        peer = rec["peer"]
+        held = self.peers.get(peer)
+        if held is None or identity(held) != identity(rec):
+            fail(f"ledger line {rec['n']} leaves @{peer}, which that door does not hold ({ledger_path()})")
+        del self.peers[peer]
+
+    def held_by(self, keys, verb):
+        """The names held by any of these doors, or a refusal when a shell matches several."""
+        matches = [peer for peer, rec in self.peers.items() if identity(rec) in keys]
+        if len(matches) > 1:
+            fail(f"this shell matches multiple registered names, {verb} from one session")
+        return matches
 
     def register(self, rec):
         """Replay one join; returns the names it renamed and the join record it took the name from."""
@@ -371,38 +400,48 @@ class Snapshot:
                 for source in sorted(inside())}
         if not keys:
             fail("send is a peer's verb, run it inside a claude or codex session")
-        matches = [peer for peer, rec in self.peers.items() if identity(rec) in keys.values()]
-        if len(matches) > 1:
-            fail("this shell matches multiple registered names, send from one session")
+        matches = self.held_by(keys.values(), "send")
         if matches:
             return matches[0]
         rejoin = {"action": "join", "actor": "caller", "bag": bag().label,
                   "vendor": next(iter(keys)) if len(keys) == 1 else None, "name": None}
-        for key in keys.values():
-            mine = self.joins(key)
+        for source, key in keys.items():
+            mine = self.transitions(key)
+            if mine and mine[-1]["kind"] == "leave":  # this door withdrew: an old queued letter must not talk it back in
+                fail(f"your name @{mine[-1]['peer']} left this bag at {display_stamp(mine[-1]['at'])}, "
+                     "do not join again unless the human asks you to resume",
+                     recovery={"action": "read", "actor": "caller", "bag": bag().label})
             if mine:
                 fail(f"your name @{mine[-1]['peer']} {self.lost(mine[-1])}", recovery=rejoin)
         fail("this session has not joined, run " + " or ".join(
             bag().command(f"join {source}") for source in keys), recovery=rejoin)
 
     def lost(self, mine):
-        """Where this door's last name went: taken by a door that holds it, or released since."""
+        """Where this door's last name went: taken by a door that holds it, taken by a door
+        that left with it, or released since."""
         peer = mine["peer"]
         holder = self.peers.get(peer)
         if holder is not None:
             return f"was taken by the {where(holder)}"
         takers = [row for row, *_ in self.history[mine["n"]:] if row["kind"] == "join" and row["peer"] == peer]
+        gone = self.left(peer)
+        if takers and gone is not None and identity(gone) == identity(takers[-1]):
+            return f"was taken by the {where(takers[-1])}, which left this bag at {display_stamp(gone['at'])}"
         renamed = [n for n, r in self.peers.items() if takers and identity(r) == identity(takers[-1])]
         return f"was released when its taker renamed to @{renamed[0]}" if renamed else "was released"
 
     def target(self, peer):
         if peer in self.peers:
             return self.peers[peer]
-        old = next((row for row, *_ in reversed(self.history)
-                    if row["kind"] == "join" and row["peer"] == peer), None)
+        old = self.last(peer)
         successor = next((n for n, r in self.peers.items()
                           if old is not None and identity(r) == identity(old)), None)
-        hint = f", its last door now holds @{successor}" if successor else ""
+        if successor:  # a door that holds a name now joined it after any record naming peer
+            hint = f", its last door now holds @{successor}"
+        elif old is not None and old["kind"] == "leave":
+            hint = f", it left this bag at {display_stamp(old['at'])}"
+        else:
+            hint = ""
         fail(f"@{peer} is not registered{hint}, run {bag().command('read')}",
              recovery={"action": "read", "actor": "caller", "bag": bag().label})
 
@@ -597,6 +636,34 @@ def send(to, body, *, final=False, wait=True):
             "letter": state.letters + 1, "final": final, "submission_state": "submitted"}
 
 
+def leave(*, wait=True):
+    """Withdraw this door's registration from the selected bag. Nothing is created or contacted."""
+    sources = sorted(inside())
+    if not sources:
+        fail("leave is a peer's verb, run it inside a claude or codex session")
+    keys = {source: (source, *current_door(source).values()) for source in sources}
+    with ledger(wait=wait, verb="leave") as write:
+        state = Snapshot(records())
+        held = state.held_by(keys.values(), "leave")
+        if not held:  # never joined, already left, or its name was taken: read says which
+            fail(f"this door holds no name in bag {bag().label}, run {bag().command('read')}",
+                 recovery={"action": "read", "actor": "caller", "bag": bag().label})
+        peer = held[0]
+        door = state.peers[peer]
+        source = vendor(door)
+        rec = record("leave", peer=peer, vendor=source, **{field: door[field] for field in SESSION[source]})
+        try:
+            write(rec)
+        except OSError as e:
+            # The write, its flush or its fsync failed: the record may be absent, partial, or in the
+            # file without confirmed durability. Only the bag itself can say which.
+            fail(f"@{peer}'s leave could not be confirmed in bag {bag().label} ({e}), "
+                 f"read the bag before leaving again", error_code="recording_failed",
+                 recovery={"action": "read", "actor": "caller", "bag": bag().label})
+    print(f"@{peer} ({source}) left bag {bag().label}")
+    return {"bag": bag().label, "name": peer, "vendor": source, "record": rec["n"]}
+
+
 def plural(count, noun):
     return f"{count} {noun}{'' if count == 1 else 's'}"
 
@@ -617,7 +684,7 @@ def read(count):
             print("\n".join("      " + l for l in rec["body"].splitlines()))
         elif rec["kind"] == "open":
             print(f"{line} {rec['limit']} letters (history)")
-        else:
+        else:  # a join with its notes, or a leave with none
             taken = notes(*note, lambda r: f"door that joined at line {r['n']}")
             print(", ".join([f"{line} @{rec['peer']} ({vendor(rec)})", *taken]))
 
@@ -937,6 +1004,8 @@ def cli(argv):
     b = sub.add_parser("bags", help="list local bags without contacting sessions",
                    description="List the default and named bags, plus an existing selected custom path.")
     b.add_argument("--resume", action="store_true", help="show Claude resume commands for conversations recorded at join")
+    sub.add_parser("leave", help="withdraw this session's door from the bag until it joins again",
+                   description="Inside a session: withdraw its registered name from the bag. The history stays.")
     a = p.parse_args(argv)
     try:
         _selection.set(bag())  # Freeze the environment's path before any I/O or delivery.
@@ -957,6 +1026,8 @@ def run(a):
         send(a.to, sys.stdin.read().rstrip("\n") if a.body == "-" else a.body, final=a.final)
     elif a.verb == "read":
         read(a.count)
+    elif a.verb == "leave":
+        leave()
     else:
         bags(a.resume)
 

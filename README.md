@@ -29,7 +29,7 @@ Python 3.10 or later. The CLI uses only the standard library. Both sessions run 
 postbag, since every command inside a letter is written for the version
 that sent it. For 2.0, upgrade every CLI and MCP participant and reconnect
 each MCP server. Existing ledgers need no rewrite. Mixed 1.x and 2.0
-participants are unsupported. See [migration details](https://github.com/parasxos/postbag/blob/v2.0.0/docs/mcp.md#upgrade-existing-sessions).
+participants are unsupported. See [migration details](https://github.com/parasxos/postbag/blob/v2.1.0/docs/mcp.md#upgrade-existing-sessions).
 
 Each vendor in use brings its own door. A Claude Code session exports
 `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` to the
@@ -41,7 +41,7 @@ Codex binary, two Codex sessions no Claude socket.
 
 ### MCP tools
 
-The optional MCP interface lets agents call `postbag_join`, `postbag_send`,
+The optional MCP interface lets agents call `postbag_join`, `postbag_leave`, `postbag_send`,
 `postbag_read`, and `postbag_bags` directly. Sender identity comes from the
 host. The ledger and native delivery are the same as the CLI. Joining creates
 a missing bag. There is no letter budget or human-only command.
@@ -53,7 +53,7 @@ pipx install 'postbag[mcp]'
 ```
 
 Register the absolute path to `postbag-mcp` as a local stdio MCP
-server in each host. [Setup, upgrades, and compatibility](https://github.com/parasxos/postbag/blob/v2.0.0/docs/mcp.md).
+server in each host. [Setup, upgrades, and compatibility](https://github.com/parasxos/postbag/blob/v2.1.0/docs/mcp.md).
 The MCP SDK is required only for this interface.
 
 The installed 2.0 candidate `8b87b4f` passed native acceptance on macOS with
@@ -61,12 +61,12 @@ Claude Code 2.1.286 and Codex 0.158.0-alpha.2.1. The check observed two-way
 receipt, no Postbag reply during 30.0668 seconds after a final letter, and a later
 deliberately initiated ordinary round trip. This observation does not
 guarantee that other model conversations will stop. See
-[candidate evidence and limits](https://github.com/parasxos/postbag/blob/v2.0.0/docs/native-compatibility.md).
+[candidate evidence and limits](https://github.com/parasxos/postbag/blob/v2.1.0/docs/native-compatibility.md).
 
 Historical 1.x native delivery checks ran on macOS with Claude Code 2.1.285 and
 Codex 0.157.1 / desktop 0.158.0-alpha.2.1, including the installed 1.3.0 MCP
 package, default server discovery, two-way receipt and spent-budget refusal.
-The 1.4 checks are also retained in [native compatibility](https://github.com/parasxos/postbag/blob/v2.0.0/docs/native-compatibility.md).
+The 1.4 checks are also retained in [native compatibility](https://github.com/parasxos/postbag/blob/v2.1.0/docs/native-compatibility.md).
 Native Linux delivery is unverified. Windows is unsupported.
 
 ## Quick start
@@ -94,8 +94,15 @@ Native Linux delivery is unverified. Windows is unsupported.
    Its footer says not to reply to that letter, even if its body asks for one.
    This is guidance to the recipient. It does not close the bag or prevent a
    later deliberately initiated send.
+5. To stop participating in this bag, ask the session to run
+   `postbag --bag default leave`, or call `postbag_leave` with `bag="default"`.
+   This releases its name without ending the session or deleting history.
+   Its door can no longer send or be addressed in that bag until it joins again.
+   Queued letters and a send already holding the bag lock can still arrive.
+   Rejoin only when you deliberately ask the session to resume.
 
-After a restart, rejoin the same bag under the same name. A reply reaches
+If you intend to resume participation after a restart, rejoin the same bag
+under the same name. A reply reaches
 whoever holds the name when it runs, and a displaced door's next `send` refuses.
 
 ## Bags
@@ -108,8 +115,8 @@ same flag, `postbag --bag acceptance join claude ada` and
 
 `--bag` goes before the verb and takes a name, kept in
 `~/.postbag/bags/<name>.jsonl`, or an absolute path of printable characters.
-`join` creates a missing default, named or path-selected bag. `send` and
-`read` refuse a missing bag without creating files or directories. A join
+`join` creates a missing default, named or path-selected bag. `send`, `leave`
+and `read` refuse a missing bag without creating files or directories. A join
 refused for its arguments or identity also creates nothing. Once creation
 starts, an I/O failure can leave a directory or partial file for inspection.
 Outputs identify their bags, and every command inside a
@@ -136,15 +143,19 @@ messaging socket and token, or Codex's thread id. `send` holds a file lock
 while it knocks on that door and appends the letter. Completed sends get
 distinct record numbers. MCP calls refuse a busy ledger without waiting.
 Letter numbers count all recorded letters in the bag.
-Record numbers also count joins and historical `open` rows. CLI `read N`
+Record numbers also count joins, leaves and historical `open` rows. CLI `read N`
 returns the last N records. MCP `before` and `next_before` address immutable
 record numbers. Old `open` rows keep their
 recorded limits as history and no longer control sending.
+Before using `leave`, upgrade all readers of the bag to 2.1 or later and
+reconnect their MCP servers. Once a leave is recorded, 2.0 readers refuse
+that bag. Older records need no migration. Deleting leave rows is not a
+repair because it would restore withdrawn registrations.
 Two sessions are the supported use, three or more is experimental.
 A bag is one ledger, the only state. No delivery daemon,
 polling, hooks, or bag index. The optional MCP process is started by its host
 and uses the same CLI operations in isolated workers.
-[CONCEPT.md](https://github.com/parasxos/postbag/blob/v2.0.0/CONCEPT.md) is the specification.
+[CONCEPT.md](https://github.com/parasxos/postbag/blob/v2.1.0/CONCEPT.md) is the specification.
 
 ## Tests
 
@@ -156,7 +167,7 @@ python -m pytest -q
 ```
 
 Without the `mcp` extra, the wire tests are skipped. Tests use private fixtures
-and fake native doors. See [Contributing](https://github.com/parasxos/postbag/blob/v2.0.0/.github/CONTRIBUTING.md).
+and fake native doors. See [Contributing](https://github.com/parasxos/postbag/blob/v2.1.0/.github/CONTRIBUTING.md).
 
 ## Security and limits
 
@@ -175,6 +186,9 @@ and fake native doors. See [Contributing](https://github.com/parasxos/postbag/bl
   bypass-permissions sessions. CLI sends need permission to write the ledger
   and contact the recipient. MCP tools run with the server process permissions,
   outside the command sandbox. Use host tool approvals for per-letter consent.
+- Leaving removes a registration in one bag. It does not revoke the native
+  inbox or registrations in other bags. Claude subagents sharing an inbox
+  share a peer, so one subagent leaving withdraws the parent's name too.
 - Postbag has no letter limit or rate limit. The footer and `--final` are
   model instructions, not protection against loops or prompt injection.
   Closing a Codex client does not revoke its saved thread's queue. Making a
@@ -188,4 +202,4 @@ and fake native doors. See [Contributing](https://github.com/parasxos/postbag/bl
   leave submission uncertain. Check both the bag and the recipient before
   sending again. An absent ledger record is not proof of failed delivery.
 
-postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v2.0.0/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v2.0.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/blob/v2.0.0/.github/SECURITY.md) · [Changelog](https://github.com/parasxos/postbag/blob/v2.0.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v2.0.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v2.0.0/LICENSE)
+postbag is a small bridge for two existing sessions. [Tools that do more](https://github.com/parasxos/postbag/blob/v2.1.0/docs/readme-research.md) · [Concept](https://github.com/parasxos/postbag/blob/v2.1.0/CONCEPT.md) · [Security](https://github.com/parasxos/postbag/blob/v2.1.0/.github/SECURITY.md) · [Changelog](https://github.com/parasxos/postbag/blob/v2.1.0/CHANGELOG.md) · [Contributing](https://github.com/parasxos/postbag/blob/v2.1.0/.github/CONTRIBUTING.md) · [MIT](https://github.com/parasxos/postbag/blob/v2.1.0/LICENSE)

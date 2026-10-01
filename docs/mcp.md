@@ -1,13 +1,14 @@
 # Local MCP interface
 
-The optional `postbag-mcp` command exposes four tools over stdio. It uses
+The optional `postbag-mcp` command exposes five tools over stdio. It uses
 the same ledger and native delivery as the CLI. Joining creates a missing
 bag. Postbag does not start agents, poll recipients, or retry letters.
 Version 2.0 removes letter budgets, exchanges and the `open` command.
+The 2.1 interface adds `postbag_leave` and the inventory's
+worker version field. The candidate has passed the package, fixture and
+native checks below.
 
-The installed 2.0 candidate `8b87b4f` passed the native acceptance gate and
-the package checks described below. Historical checks describe their
-recorded versions.
+Historical checks describe their recorded versions.
 
 ## Install and connect
 
@@ -85,6 +86,13 @@ After installing or upgrading, restart or reconnect the host's MCP server.
 A running server keeps its imported code until restarted. Sessions that do
 not yet expose the new tools can keep using the upgraded CLI.
 
+Before the first `leave`, upgrade every CLI and MCP reader of that bag to
+2.1 or later and reconnect their MCP servers. The new `leave` record is a
+forward-format boundary: a 2.0 reader refuses the whole bag once one appears.
+Existing records need no migration. Downgrading after a leave does not make
+the bag readable by 2.0, and deleting leave rows is not a repair because it
+would restore withdrawn registrations. Unknown record kinds remain errors.
+
 - In the ChatGPT desktop app, use **Settings > MCP servers**, save the
   configuration, then select **Restart**. This refreshes loaded threads on
   that app-server. Independently running app-servers need their own refresh.
@@ -126,8 +134,15 @@ Reconnect after either an upgrade or downgrade. Do not retry automatically.
 This deployment check is separate from the MCP wire protocol and provides
 no authentication against another local process.
 
-Rejoin under the same name if the native session restarted, or if a Codex
-join used the older shared root ID. A join records a door, not a letter.
+The 2.1 tools keep worker protocol 2. This protocol number does not negotiate
+tool availability or ledger features. A running 2.0 parent can launch a 2.1
+worker while still exposing only four tools. A 2.1 parent directed at a 2.0
+worker receives a refusal for the unknown `leave` operation. Reconnect after
+upgrading so both the tool catalog and worker support the same operations.
+
+If you intend to resume participation, rejoin under the same name when the
+native session restarted or a Codex join used the older shared root ID.
+A join records a door, not a letter.
 A Claude process whose inbox is unchanged needs no rejoin. Use CLI `join`
 when you want to keep a current `bags --resume` hint. MCP joins deliberately
 omit the conversation ID.
@@ -143,12 +158,13 @@ and CLI interchangeably at the same version.
 | Tool | Arguments | Effect |
 |---|---|---|
 | `postbag_join` | `name`, `bag="default"` | Register this caller's native door, creating a missing bag. A reused name takes over its previous holder. |
+| `postbag_leave` | `bag="default"` | Release the name held by this caller's door in this bag. The name comes from the ledger, never a tool argument. |
 | `postbag_send` | `to`, `body`, `bag="default"`, `final=false` | Submit one letter and record it. `final=true` asks for no reply to this letter. |
 | `postbag_read` | `bag="default"`, `limit=20`, `before=null` | Return recent records in chronological order. Pass `next_before` as `before` for older records. |
-| `postbag_bags` | `limit=50`, `offset=0` | Inventory default and named bags. Pass `next_offset` as `offset` for another page. |
+| `postbag_bags` | `limit=50`, `offset=0` | Inventory default and named bags. Pass `next_offset` as `offset` for another page. Its data carries `version`, the installed Postbag core version loaded by the worker for that call. |
 
 Page limits range from 1 to 100. `before` is an exclusive ledger record
-number `n`, counting joins and historical opens as well as letters. These
+number `n`, counting joins, leaves and historical opens as well as letters. These
 record numbers never change. A letter's displayed number is its ordinal
 among all recorded letters in the bag, not its position on the page.
 Send bodies must contain 1 to 65,536 UTF-8 bytes and no NUL bytes.
@@ -167,8 +183,9 @@ MCP selects bags only by name and ignores `POSTBAG_LEDGER`. Absolute paths
 remain a CLI feature. A missing bag is created only by a valid join. A join
 refused for its arguments or identity creates nothing. An I/O failure after
 creation starts can leave a directory or partial file for inspection.
-Send and read on a missing default or named bag create nothing, including
-directories. Send points to `postbag_join`, and read points to `postbag_bags`.
+Send, leave and read on a missing default or named bag create nothing,
+including directories. Send points to `postbag_join`. Leave and read point
+to `postbag_bags`.
 Read and inventory calls create no files and probe no
 sessions. Endpoint credentials and conversation IDs are excluded from their
 results. Letter bodies are shared content, so read access still reveals the
@@ -182,12 +199,19 @@ Successful `data` fields are:
 | Operation | Fields |
 |---|---|
 | Join | `bag`, `name`, `vendor`, `renamed`, `took` |
+| Leave | `bag`, `name`, `vendor`, `record` |
 | Send | `bag`, `from`, `to`, `record`, `letter`, `final`, `submission_state` |
 | Read | `bag`, `letters`, `peers`, `records`, `next_before` |
-| Bags | `bags`, `total`, `offset`, `next_offset`, `errors`, `scope` |
+| Bags | `version`, `bags`, `total`, `offset`, `next_offset`, `errors`, `scope` |
+
+Inventory data includes `version` for empty and partial inventories too.
+The running MCP server reports its own loaded version during initialization.
+After an in-place upgrade, the fresh worker can load a newer version while
+the server still exposes its older toolset. Reconnect the server, then
+check its reported status and available tools to verify the refresh.
 
 Read's `letters` is the whole bag's recorded letter count. Each read record
-has `n`, `at`, and `kind`. Join records add `peer` and `vendor`. Letter
+has `n`, `at`, and `kind`. Join and leave records add `peer` and `vendor`. Letter
 records add `from`, `to`, `body`, `letter`, and Boolean `final`. Historical
 open records retain `limit` as inert history. There are no derived exchange
 fields. Postbag writes `final` in the raw ledger only when true. A hand-written
@@ -199,13 +223,38 @@ Each inventory row has `bag`, `letters`, `last_letter`, and `peers`.
 A bag with joins and no letters has count zero. Rows are separate snapshots,
 not a consistent snapshot across all bags.
 
+## Leaving a bag
+
+Call `postbag_leave` with the bag to withdraw this door's registration.
+It appends one record and changes no letter counts. The session stays alive,
+its history remains, and its registrations in other bags stay in place.
+The door can neither send nor be addressed in this bag until it joins again.
+A name can also be taken by a different door through `join`.
+
+Leave and send use the same exclusive ledger lock. If a send holds the lock
+first, it may submit and record before leave can take effect. If leave takes
+the lock first, the next send sees the withdrawal and refuses. Neither order
+recalls a letter already queued. Claude subagents sharing an inbox share one
+door, so any of them leaving removes the parent's registration too.
+
+After a deliberate leave, rejoin only when the human asks to resume.
+An old queued letter is not permission to rejoin. A missing bag, unregistered
+door or repeated leave refuses without appending. Leave is marked destructive
+because it removes an address, and non-idempotent because it can refuse or
+remove a later registration when repeated. It contacts no native transport.
+If the call is cancelled, times out, or loses its result, read the bag to
+check the current registration before taking another action. A failed append
+or fsync may still leave a visible leave record. `submission_state=null`
+means no letter submission outcome is being reported, not that no mutation
+took place.
+
 ## Caller identity
 
 There is no sender, vendor, thread ID, socket, or token tool argument.
 Unknown arguments are refused. Identity comes from the trusted local host:
 
 - **Codex:** the host supplies `_meta.threadId` on each tool call. Postbag
-  requires that concrete thread ID for join and send. It ignores startup
+  requires that concrete thread ID for join, send and leave. It ignores startup
   `CODEX_SESSION_ID` and per-call `sessionId`, which can refer to a shared
   root session. The CLI prefers `CODEX_THREAD_ID`, with the old variable as
   a fallback when it is absent. Rejoin after upgrading if a previous join
@@ -216,7 +265,7 @@ Unknown arguments are refused. Identity comes from the trusted local host:
   the MCP process. Use a fresh CLI join if a current `bags --resume` hint is
   needed.
 - A complete Claude inbox combined with a Codex `threadId`, invalid metadata,
-  or missing identity refuses join and send. Read and inventory remain usable.
+  or missing identity refuses join, send and leave. Read and inventory remain usable.
 
 This is session routing, not authentication against other local processes.
 A client that can launch this server can supply metadata, just as a local
@@ -305,17 +354,21 @@ an unknown outcome. Never retry automatically.
 ## Verification
 
 The `test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
-homes, fake native executables, and private Unix sockets. The installed
-`8b87b4f` wheel passed **157 MCP tests** outside the source checkout. The
-extracted source archive passed **55 tests in `test_core_2.py`**. Both used
-pytest 9.1.1 and treated `ResourceWarning` as an error. The wire suite covers
+homes, fake native executables, and private Unix sockets. The frozen 2.1
+source at `6489151` passed **665 tests** with private HOME and
+`ResourceWarning` as an error. Installed-wheel runs outside the source
+checkout covered **184 unique MCP cases**. The candidate source archive
+passed **52 core leave tests**. These checks used pytest 9.1.1. Offline Linux
+fixtures covered the same 184 MCP and 52 leave cases. The wire suite covers
 identity, isolation, secret redaction, malformed inputs and worker responses,
 native failures, cancellation, join-created bags, missing-bag refusals,
-strict `final`, concurrent sends and record cursors across legacy opens.
+strict `final`, concurrent sends, record cursors across legacy opens,
+withdrawal recovery, leave redaction and failures after a leave is recorded.
 Current and legacy MCP wire clients are separate from the private
-parent/worker protocol. A separate full-suite run passed **586 tests** with
-private HOME and `ResourceWarning` as an error. All **13 CI jobs** passed
-for the same commit. [Candidate CI](https://github.com/parasxos/postbag/actions/runs/36842969085).
+parent/worker protocol. Actual 2.0 modules were also checked against the
+candidate in both parent/worker pairings. A 2.0 reader cleanly refused a
+ledger containing leave. Exact test snapshots and combined coverage are
+recorded in [native compatibility](native-compatibility.md).
 
 Run the suite with:
 
@@ -329,14 +382,17 @@ installation skips them. CI tests the core without that extra, runs the MCP
 suite separately, and runs the wire tests against an installed wheel outside
 the source checkout.
 
-The installed `8b87b4f` candidate passed the native gate on its first run with
-Codex 0.158.0-alpha.2.1 and Claude Code 2.1.286 on macOS 27.0.1. Seven
-model-authored tool calls made two joins and five sends. The check observed
-an initial round trip, then no Claude send and no ledger change for
-30.0668 seconds after receipt and turn completion of a final letter whose
-body asked for a reply. A deliberately initiated ordinary letter and reply
-then arrived in both directions. All three processes exited 0, with
-no forced shutdown and closed endpoints.
+The installed `391fed5` candidate passed the native gate with Codex 0.159.2
+and Claude Code 2.1.286 on macOS 27.0.1. Its runtime modules are unchanged at
+`6489151`. Ten model-authored calls made three joins, one leave and six send
+attempts. Five letters were submitted and observed by their recipients.
+The send after leave refused with the departure time and an unchanged
+ledger. A deliberate rejoin restored delivery and a reply. The final-letter
+check observed no recipient send or ledger change for 30.1146 seconds after
+receipt and turn completion. All three processes exited 0 with closed
+endpoints and no forced shutdown. A preceding attempt was rejected by an
+overly strict harness comparison of a valid `@` address. The fresh passing
+run used a corrected harness and the same product code.
 
 The queue used default discovery in private state, not the personal desktop
 daemon. Claude's local receipt markers were instrumentation rather than

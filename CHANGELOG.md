@@ -4,6 +4,35 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-10-01
+
+Leaving a bag is now a recorded withdrawal of the caller's name. MCP
+inventory also reports the installed worker version. Upgrade both peers,
+including their CLI and MCP installations, and reconnect each MCP server.
+Bags containing a leave record require 2.1 readers. Older bags remain
+unchanged and need no migration.
+
+### Added
+- CLI `leave` and MCP `postbag_leave` withdraw the caller's current name
+  from one bag. They preserve its history and session, contact no native
+  transport, and append a leave record under the same lock as sending.
+  Queued letters can still arrive. Rejoin only when the human asks to resume.
+- MCP inventory data includes `version` for the installed core loaded by
+  that call's worker, including empty and partial inventories. It does not
+  prove that the running parent has refreshed its tool catalog.
+
+### Changed
+- Preserve the core refusal reason when directing an MCP caller to read
+  the bag, including departure times and names that moved to another door.
+
+### Compatibility
+- Upgrade every reader of a bag before recording its first leave. Readers
+  older than 2.1 refuse a bag containing that record. Existing bags need no
+  rewrite. Downgrading does not undo a leave, and deleting leave rows would
+  restore withdrawn registrations. Unknown record kinds remain errors.
+- Reconnect MCP servers after upgrading to expose the new tool. The internal
+  worker protocol remains 2 and does not negotiate tool availability.
+
 ## [2.0.0] - 2026-10-01
 
 Postbag no longer uses letter budgets or exchanges. Upgrade both peers,
@@ -333,7 +362,8 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/parasxos/postbag/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/parasxos/postbag/releases/tag/v2.1.0
 [2.0.0]: https://github.com/parasxos/postbag/releases/tag/v2.0.0
 [1.4.0]: https://github.com/parasxos/postbag/releases/tag/v1.4.0
 [1.3.0]: https://github.com/parasxos/postbag/releases/tag/v1.3.0

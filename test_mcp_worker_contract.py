@@ -195,15 +195,16 @@ def test_valid_worker_outcome_retains_submission_state(wire, tmp_path, payload):
     assert wire.calls() == []
 
 
-def test_invalid_worker_response_keeps_null_non_send_state(wire, tmp_path):
+@pytest.mark.parametrize('operation,arguments', [('join', {'name': 'ada'}), ('leave', {})])
+def test_invalid_worker_response_keeps_null_non_send_state(wire, tmp_path, operation, arguments):
     wire.seed(codex_join("ada", THREAD_A))
     before = wire.path().read_bytes()
     results = []
 
     async def exercise():
         response = encoded(envelope(unexpected=SECRET))
-        async with fixture_worker_session(wire, tmp_path, response, "join") as (client, log):
-            results.append(await client.call_tool('postbag_join', {'name': 'ada'}, meta=meta()))
+        async with fixture_worker_session(wire, tmp_path, response, operation) as (client, log):
+            results.append(await client.call_tool(f'postbag_{operation}', arguments, meta=meta()))
             results.append(await client.call_tool('postbag_read', {}))
             results.append(log)
     asyncio.run(exercise())
