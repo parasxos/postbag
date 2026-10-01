@@ -6,6 +6,7 @@
     postbag read [N]              # the ledger, or its last N records
     postbag bags                  # local bags, their letters and registered peers
     postbag leave                 # inside a session: withdraw this door's name from the bag
+    postbag mcp                   # start the optional MCP server on stdio, the same as postbag-mcp
 """
 import argparse
 import errno
@@ -1006,7 +1007,13 @@ def cli(argv):
     b.add_argument("--resume", action="store_true", help="show Claude resume commands for conversations recorded at join")
     sub.add_parser("leave", help="withdraw this session's door from the bag until it joins again",
                    description="Inside a session: withdraw its registered name from the bag. The history stays.")
+    sub.add_parser("mcp", help="start the optional MCP server on stdio, the same as postbag-mcp",
+                   description="Start the MCP server that postbag-mcp starts. It takes no bag and no arguments. "
+                               "Hosts that run a package by its own name, such as uvx, use this entry.")
     a = p.parse_args(argv)
+    if a.verb == "mcp":
+        serve_mcp(a)
+        return
     try:
         _selection.set(bag())  # Freeze the environment's path before any I/O or delivery.
         run(a)
@@ -1017,6 +1024,18 @@ def cli(argv):
             os.dup2(sink.fileno(), sys.stdout.fileno())
     except (OSError, UnicodeError) as e:
         fail(f"{a.verb} failed ({e})")
+
+
+def serve_mcp(a):
+    """A launcher, not a ledger verb: refuse a bag selection, then hand stdio to the MCP server."""
+    if a.bag is not None:
+        fail("mcp takes no bag, each tool call names its own", context=False, error_code="invalid_input")
+    try:
+        import postbag_mcp
+        postbag_mcp.serve()
+    except ImportError:
+        fail("MCP support is not installed, install it with: pip install 'postbag[mcp]'",
+             context=False, error_code="invalid_input")
 
 
 def run(a):
