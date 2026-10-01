@@ -145,7 +145,7 @@ and CLI interchangeably at the same version.
 | `postbag_join` | `name`, `bag="default"` | Register this caller's native door, creating a missing bag. A reused name takes over its previous holder. |
 | `postbag_send` | `to`, `body`, `bag="default"`, `final=false` | Submit one letter and record it. `final=true` asks for no reply to this letter. |
 | `postbag_read` | `bag="default"`, `limit=20`, `before=null` | Return recent records in chronological order. Pass `next_before` as `before` for older records. |
-| `postbag_bags` | `limit=50`, `offset=0` | Inventory default and named bags. Pass `next_offset` as `offset` for another page. Its data carries `version`, the installed Postbag version that served the call. |
+| `postbag_bags` | `limit=50`, `offset=0` | Inventory default and named bags. Pass `next_offset` as `offset` for another page. Its data carries `version`, the installed Postbag core version loaded by the worker for that call. |
 
 Page limits range from 1 to 100. `before` is an exclusive ledger record
 number `n`, counting joins and historical opens as well as letters. These
@@ -184,7 +184,13 @@ Successful `data` fields are:
 | Join | `bag`, `name`, `vendor`, `renamed`, `took` |
 | Send | `bag`, `from`, `to`, `record`, `letter`, `final`, `submission_state` |
 | Read | `bag`, `letters`, `peers`, `records`, `next_before` |
-| Bags | `bags`, `total`, `offset`, `next_offset`, `errors`, `scope` |
+| Bags | `version`, `bags`, `total`, `offset`, `next_offset`, `errors`, `scope` |
+
+Inventory data includes `version` for empty and partial inventories too.
+The running MCP server reports its own loaded version during initialization.
+After an in-place upgrade, the fresh worker can load a newer version while
+the server still exposes its older toolset. Reconnect the server, then
+check its reported status and available tools to verify the refresh.
 
 Read's `letters` is the whole bag's recorded letter count. Each read record
 has `n`, `at`, and `kind`. Join records add `peer` and `vendor`. Letter
