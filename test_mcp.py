@@ -324,7 +324,9 @@ def test_read_pagination_and_inventory_redact_endpoint_fields(wire):
                 cursor = expected_cursor
             inventory = await client.call_tool("postbag_bags", {})
             inventory_data = checked(inventory)["data"]
-            assert set(inventory_data) == {"bags", "total", "offset", "next_offset", "errors", "scope"}
+            assert set(inventory_data) == {"version", "bags", "total", "offset", "next_offset", "errors", "scope"}
+            # the worker's installed version, visible to the model; the same layout rule as SERVER_SCRIPT
+            assert inventory_data["version"] == importlib.import_module("postbag").__version__
             assert inventory_data["total"] == 1
             row = inventory_data["bags"][0]
             assert set(row) == {"bag", "letters", "last_letter", "peers"}

@@ -145,7 +145,7 @@ and CLI interchangeably at the same version.
 | `postbag_join` | `name`, `bag="default"` | Register this caller's native door, creating a missing bag. A reused name takes over its previous holder. |
 | `postbag_send` | `to`, `body`, `bag="default"`, `final=false` | Submit one letter and record it. `final=true` asks for no reply to this letter. |
 | `postbag_read` | `bag="default"`, `limit=20`, `before=null` | Return recent records in chronological order. Pass `next_before` as `before` for older records. |
-| `postbag_bags` | `limit=50`, `offset=0` | Inventory default and named bags. Pass `next_offset` as `offset` for another page. |
+| `postbag_bags` | `limit=50`, `offset=0` | Inventory default and named bags. Pass `next_offset` as `offset` for another page. Its data carries `version`, the installed Postbag version that served the call. |
 
 Page limits range from 1 to 100. `before` is an exclusive ledger record
 number `n`, counting joins and historical opens as well as letters. These

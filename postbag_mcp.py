@@ -205,7 +205,7 @@ def worker(request: dict) -> dict:
                           "peers": None if peers is None else
                           [{"name": name, "vendor": vendor} for name, vendor in peers]}
                          for label, letters, last, peers in rows[offset:offset + limit]]
-                data = {"bags": items, "total": len(rows), "offset": offset,
+                data = {"version": postbag.__version__, "bags": items, "total": len(rows), "offset": offset,
                         "next_offset": offset + limit if offset + limit < len(rows) else None,
                         "errors": problems, "scope": "Default and named bags under ~/.postbag; custom paths excluded."}
                 return result(not problems, "Inventory incomplete." if problems else
