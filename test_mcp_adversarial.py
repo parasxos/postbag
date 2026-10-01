@@ -26,7 +26,7 @@ if (HERE / "postbag.py").exists():
 # Installed layout (only test_mcp*.py copied elsewhere): use the installed package as found.
 
 from test_mcp import (  # noqa: E402
-    FAKE_TOKEN, THREAD_A, THREAD_B, checked, codex_join, letter, meta, opened, wire,
+    FAKE_TOKEN, THREAD_A, THREAD_B, checked, checked_read, checked_send, codex_join, letter, meta, wire,
 )
 import postbag  # noqa: E402
 import postbag_mcp  # noqa: E402
@@ -36,19 +36,20 @@ __all__ = ["wire"]
 BOUNDARY = 65536
 
 
-def peers_and_budget(wire, limit=2):
-    return wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(limit))
+def peers(wire):
+    return wire.seed(codex_join("ada", THREAD_A), codex_join("bob", THREAD_B))
 
 
 def letters(rows):
     return [row for row in rows if row["kind"] == "letter"]
 
 
-# 1. two identities race for the last letter ---------------------------------------
+# 1. two identities race for the ledger ---------------------------------------
 
 @pytest.mark.parametrize("attempt", range(2))
-def test_two_identities_racing_for_the_last_letter_yield_one_submission(wire, attempt):
-    peers_and_budget(wire, limit=1)
+def test_two_identities_racing_preserve_sender_and_unique_letter_numbers(wire, attempt):
+    peers(wire)
+    outcomes = []
 
     async def exercise():
         async with wire.session(extra={"POSTBAG_TEST_SLEEP": "0.3"}) as client:
@@ -56,16 +57,22 @@ def test_two_identities_racing_for_the_last_letter_yield_one_submission(wire, at
                 client.call_tool("postbag_send", {"to": "bob", "body": "from ada"}, meta=meta(THREAD_A)),
                 client.call_tool("postbag_send", {"to": "ada", "body": "from bob"}, meta=meta(THREAD_B)),
             )
-            outcomes = [checked(result, ok=not result.is_error) for result in results]
-            winners = [outcome for outcome in outcomes if outcome["ok"]]
-            losers = [outcome for outcome in outcomes if not outcome["ok"]]
-            assert len(winners) == 1 and len(losers) == 1
-            assert winners[0]["submission_state"] == "submitted"
-            assert losers[0]["submission_state"] == "not_submitted"
-            assert losers[0]["error_code"] in {"ledger_busy", "refused"}
+            for result in results:
+                value = checked_send(result) if not result.is_error else checked(result, ok=False)
+                if not value["ok"]:
+                    assert value["submission_state"] == "not_submitted"
+                    assert value["error_code"] == "ledger_busy"
+                outcomes.append(value)
     asyncio.run(exercise())
-    assert len(wire.calls()) == 1
-    assert len(letters(wire.rows())) == 1
+    accepted = [value for value in outcomes if value["ok"]]
+    assert 1 <= len(accepted) <= 2
+    recorded = letters(wire.rows())
+    assert len(wire.calls()) == len(recorded) == len(accepted)
+    expected = [("ada", "bob", "from ada"), ("bob", "ada", "from bob")]
+    assert sorted((row["from"], row["to"], row["body"]) for row in recorded) == sorted(
+        entry for entry, value in zip(expected, outcomes) if value["ok"])
+    assert sorted(value["data"]["letter"] for value in accepted) == list(range(1, len(accepted) + 1))
+    assert [row["n"] for row in recorded] == list(range(3, len(accepted) + 3))
 
 
 # 2. hostile recipient and thread values -----------------------------------------------
@@ -75,7 +82,7 @@ HOSTILE_TO = ["@BOB", "Bob", "../bob", "bob/../ada", "@@bob", " bob", "bob\n", "
 
 
 def test_hostile_recipient_values_are_refused_before_transport(wire):
-    peers_and_budget(wire)
+    peers(wire)
     before = wire.path().read_bytes()
 
     async def exercise():
@@ -119,7 +126,7 @@ def test_body_limit_is_exact_for_two_three_and_four_byte_code_points(wire):
     exceeds = [body + "a" for body in fits]
     assert all(len(body.encode()) == BOUNDARY for body in fits)
     assert all(len(body.encode()) == BOUNDARY + 1 for body in exceeds)
-    peers_and_budget(wire, limit=len(fits))
+    peers(wire)
 
     async def exercise():
         async with wire.session() as client:
@@ -137,15 +144,15 @@ def test_body_limit_is_exact_for_two_three_and_four_byte_code_points(wire):
 # 4. pagination edges and a large page ----------------------------------------------------
 
 def test_read_pagination_edges(wire):
-    rows = wire.seed(opened(5), letter("one"), letter("two"), letter("three"))
+    rows = wire.seed(codex_join("ada", THREAD_A), letter("one"), letter("two"), letter("three"))
 
     async def exercise():
         async with wire.session() as client:
             async def page(**arguments):
-                return checked(await client.call_tool("postbag_read", arguments))["data"]
+                return checked_read(await client.call_tool("postbag_read", arguments))
             first = await page(before=1)
             assert first["records"] == [] and first["next_before"] is None
-            assert first["remaining"] == 2, "state describes the whole bag, not the page"
+            assert first["letters"] == 3, "state describes the whole bag, not the page"
             assert [row["n"] for row in (await page(before=10 ** 12))["records"]] == [1, 2, 3, 4]
             edge = await page(before=len(rows))
             assert [row["n"] for row in edge["records"]] == [1, 2, 3] and edge["next_before"] is None
@@ -156,24 +163,26 @@ def test_read_pagination_edges(wire):
             last = await page(limit=1, before=2)
             assert [row["n"] for row in last["records"]] == [1] and last["next_before"] is None
             wire.path().unlink()
-            empty = await page(limit=100, before=1)
-            assert empty["records"] == [] and empty["remaining"] is None
+            missing = checked(await client.call_tool("postbag_read", {"limit": 100, "before": 1}), ok=False)
+            assert missing["submission_state"] is None
+            assert not wire.path().exists()
     asyncio.run(exercise())
     assert wire.calls() == []
 
 
 def test_read_limit_100_over_three_thousand_records(wire):
     body = "\u03ba\u03b1\u03bb\u03b7\u03bc\u03ad\u03c1\u03b1 " * 40
-    wire.seed(opened(5000), *(letter(f"{body}{index}") for index in range(3000)))
+    wire.seed(codex_join("ada", THREAD_A), *(letter(f"{body}{index}") for index in range(3000)))
 
     async def exercise():
         async with wire.session() as client:
             started = time.monotonic()
-            page = checked(await client.call_tool("postbag_read", {"limit": 100}))["data"]
+            page = checked_read(await client.call_tool("postbag_read", {"limit": 100}))
             assert time.monotonic() - started < 5
             assert [row["n"] for row in page["records"]] == list(range(2902, 3002))
-            assert page["next_before"] == 2902 and page["remaining"] == 2000
-            previous = checked(await client.call_tool("postbag_read", {"limit": 100, "before": 2902}))["data"]
+            assert page["next_before"] == 2902 and page["letters"] == 3000
+            assert [row["letter"] for row in page["records"]] == list(range(2901, 3001))
+            previous = checked_read(await client.call_tool("postbag_read", {"limit": 100, "before": 2902}))
             assert [row["n"] for row in previous["records"]] == list(range(2802, 2902))
             assert previous["records"][0]["body"].startswith(body)
     asyncio.run(exercise())
@@ -181,31 +190,33 @@ def test_read_limit_100_over_three_thousand_records(wire):
 
 # 5. a bag that is a valid name but does not exist ------------------------------------------
 
+@pytest.mark.parametrize("bag", ["default", "ghost-bag"])
 @pytest.mark.parametrize("tool,arguments", [
     ("postbag_send", {"to": "bob", "body": "hello"}),
     ("postbag_read", {}),
-    ("postbag_join", {"name": "ada"}),
 ])
-def test_nonexistent_named_bag_is_refused_and_never_created(wire, tool, arguments):
-    peers_and_budget(wire)
-
+def test_nonexistent_bag_is_refused_without_creating_directories(wire, bag, tool, arguments):
     async def exercise():
         async with wire.session() as client:
-            result = checked(await client.call_tool(tool, {**arguments, "bag": "ghost-bag"}, meta=meta()), ok=False)
+            result = checked(await client.call_tool(tool, {**arguments, "bag": bag}, meta=meta()), ok=False)
             assert result["error_code"] == "refused"
             assert result["submission_state"] == ("not_submitted" if tool == "postbag_send" else None)
-            assert "bag ghost-bag does not exist" in result["message"]
-            assert "postbag --bag ghost-bag open" in result["message"]
-            assert result["data"]["recovery"] == {"action": "open", "actor": "human", "bag": "ghost-bag"}
+            action = "join" if tool == "postbag_send" else "bags"
+            recovery = {"action": action, "actor": "caller", "bag": bag}
+            if tool == "postbag_send":
+                recovery.update(vendor="codex", name=None)
+            assert result["data"]["recovery"] == recovery
+            assert f"postbag_{action}" in result["message"]
+            assert result["message"].endswith("; stop and ask the human")
     asyncio.run(exercise())
-    assert not (wire.home / ".postbag" / "bags").exists()
+    assert not (wire.home / ".postbag").exists()
     assert wire.calls() == []
 
 
 # 6. the environment a Codex caller's transport child receives ------------------------------
 
 def test_codex_transport_child_sees_only_its_own_identity(wire, tmp_path):
-    peers_and_budget(wire)
+    peers(wire)
     dump = tmp_path / "codex-env.json"
     spy = tmp_path / "spy-codex"
     spy.write_text(
@@ -238,7 +249,7 @@ def test_codex_transport_child_sees_only_its_own_identity(wire, tmp_path):
 
 def test_client_closed_mid_knock_still_records_the_letter(wire):
     """The SDK's 2 s grace expires and it signals the server group; the worker outlives it."""
-    peers_and_budget(wire, limit=1)
+    peers(wire)
 
     async def exercise():
         async with wire.session(extra={"POSTBAG_TEST_SLEEP": "2.5"}) as client:
@@ -265,8 +276,9 @@ def test_fsync_failure_after_knock_reports_unconfirmed_recording(tmp_path, monke
     ledger = home / ".postbag" / "ledger.jsonl"
     ledger.parent.mkdir(parents=True)
     rows = [dict(n=index, at="2026-09-30T10:00:00+00:00", **row) for index, row in enumerate(
-        (codex_join("ada", THREAD_A), codex_join("bob", THREAD_B), opened(2)), 1)]
+        (codex_join("ada", THREAD_A), codex_join("bob", THREAD_B)), 1)]
     ledger.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    ledger.chmod(0o600)
     monkeypatch.setenv("HOME", str(home))
     for variable in postbag_mcp.SESSION_VARS | {"POSTBAG_LEDGER", "POSTBAG_CODEX"}:
         monkeypatch.delenv(variable, raising=False)
@@ -289,3 +301,5 @@ def test_fsync_failure_after_knock_reports_unconfirmed_recording(tmp_path, monke
     assert knocks == [THREAD_B]
     on_disk = [json.loads(line) for line in ledger.read_text().splitlines()]
     assert [row["body"] for row in letters(on_disk)] == ["durability unknown"]
+    assert on_disk[:-1] == rows and len(on_disk) == len(rows) + 1
+    assert postbag.Snapshot(on_disk).letters == 1

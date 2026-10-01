@@ -16,7 +16,7 @@ try:
 except ImportError:
     pytest.skip("MCP wire checks require mcp 2.x", allow_module_level=True)
 
-from test_mcp import SERVER_SCRIPT, checked, meta, opened, wire, wire_text
+from test_mcp import SERVER_SCRIPT, THREAD_A, checked, codex_join, meta, wire, wire_text
 import postbag
 import postbag_mcp
 
@@ -39,7 +39,7 @@ def test_malformed_recovery_preserves_the_original_refusal(tmp_path, monkeypatch
 
     monkeypatch.setattr(postbag, 'send', refused)
     value = postbag_mcp.worker({'operation': 'send', 'vendor': 'codex',
-                               'arguments': {'bag': 'default', 'to': 'bob', 'body': 'fixture'}})
+                               'arguments': {'bag': 'default', 'to': 'bob', 'body': 'fixture', 'final': False}})
     assert value == {'ok': False, 'error_code': 'refused', 'submission_state': 'not_submitted',
                      'message': str(error), 'data': {}}
     assert SECRET not in json.dumps(value)
@@ -56,7 +56,7 @@ def test_unexpected_send_blocking_error_does_not_claim_pre_submission_contention
 
     monkeypatch.setattr(postbag, 'send', interrupted)
     value = postbag_mcp.worker({'operation': 'send', 'vendor': 'codex',
-                               'arguments': {'bag': 'default', 'to': 'bob', 'body': 'fixture'}})
+                               'arguments': {'bag': 'default', 'to': 'bob', 'body': 'fixture', 'final': False}})
     assert value['ok'] is False and value['error_code'] == 'operation_failed'
     assert value['submission_state'] == 'unknown'
     assert value['message'].endswith('; stop and ask the human')
@@ -115,6 +115,7 @@ async def fixture_worker_session(wire, tmp_path, response, operation="send"):
     worker = tmp_path/'fixture-worker.py'
     worker.write_text(
         'import base64,json,sys\n'
+        'assert sys.argv[1:] == ["--worker-v2"]\n'
         f'sys.path.insert(0,{str(SERVER_SCRIPT.parent)!r})\n'
         'import postbag_mcp as real\n'
         'request=json.load(sys.stdin)\n'
@@ -140,7 +141,7 @@ async def fixture_worker_session(wire, tmp_path, response, operation="send"):
 
 @pytest.mark.parametrize('response', INVALID)
 def test_invalid_worker_response_keeps_unknown_send_outcome(wire, tmp_path, response):
-    wire.seed(opened(2))
+    wire.seed(codex_join("ada", THREAD_A))
     before = wire.path().read_bytes()
     results = []
 
@@ -148,7 +149,7 @@ def test_invalid_worker_response_keeps_unknown_send_outcome(wire, tmp_path, resp
         async with fixture_worker_session(wire, tmp_path, response) as (client, log):
             try:
                 results.append(await client.call_tool('postbag_send', {
-                    'to': 'bob', 'body': 'isolated worker protocol probe'}, meta=meta()))
+                    'to': 'bob', 'body': 'isolated worker protocol probe', 'final': False}, meta=meta()))
             except Exception as error:
                 results.append(error)
             # Even a protocol error must leave the server able to answer a read.
@@ -178,14 +179,14 @@ VALID = [
 
 @pytest.mark.parametrize('payload', VALID)
 def test_valid_worker_outcome_retains_submission_state(wire, tmp_path, payload):
-    wire.seed(opened(2))
+    wire.seed(codex_join("ada", THREAD_A))
     before = wire.path().read_bytes()
     results = []
 
     async def exercise():
         async with fixture_worker_session(wire, tmp_path, encoded(payload)) as (client, _):
             results.append(await client.call_tool('postbag_send', {
-                'to': 'bob', 'body': 'isolated worker protocol probe'}, meta=meta()))
+                'to': 'bob', 'body': 'isolated worker protocol probe', 'final': False}, meta=meta()))
             results.append(await client.call_tool('postbag_read', {}))
     asyncio.run(exercise())
     checked(results[1])
@@ -195,7 +196,7 @@ def test_valid_worker_outcome_retains_submission_state(wire, tmp_path, payload):
 
 
 def test_invalid_worker_response_keeps_null_non_send_state(wire, tmp_path):
-    wire.seed(opened(2))
+    wire.seed(codex_join("ada", THREAD_A))
     before = wire.path().read_bytes()
     results = []
 

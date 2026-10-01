@@ -3,11 +3,11 @@
 ## What postbag trusts
 
 postbag trusts the local OS account and the sessions that joined the bag.
-Who may run each verb is decided by environment variables the vendors export
-inside their own sessions: `join` and `send` run inside a session, `open`
-runs outside agent sessions. That prevents role mistakes between the human
-and the agents. It is not a boundary against another program running as the
-same user. A name is an address, not authentication.
+CLI `join` and `send` use environment variables the vendors export inside
+their own sessions. MCP uses trusted host metadata or inherited inbox fields.
+These fields select the caller's door. They are not authentication against
+another program running as the same user. A name is an address, not
+authentication. Version 2.0 has no human-only verb.
 
 ## What the ledger holds
 
@@ -15,13 +15,15 @@ Each selected bag, `~/.postbag/ledger.jsonl` by default, a named bag under
 `~/.postbag/bags`, or a custom path from `--bag` or `POSTBAG_LEDGER`, holds
 every letter body and every registered door: each Codex thread id, and each
 Claude messaging socket path and session token. Several doors of one vendor
-can be registered. Writes keep the file `0600` and new state directories
-`0700`. An existing directory is left alone, whichever selector chose it.
+can be registered. New ledger files use `0600` and new state directories
+`0700`. Existing file and directory modes are preserved. Every mutation
+refuses an existing ledger that grants group or other access or lacks owner
+read and write permissions, before parsing, contacting a door or appending.
 Anyone who can read that file can submit messages to its registered Claude
 inboxes. The recipient's policy still governs acceptance.
 
 `postbag read` and `postbag bags` hide door credentials and print registered
-names and vendors on purpose. Inventory also shows remaining budgets and
+names and vendors on purpose. Inventory also shows recorded letter counts and
 last recorded letter timestamps, but no letter bodies. It reads ledgers
 without contacting sessions. Registration does not establish liveness.
 
@@ -37,10 +39,27 @@ policy may hold or refuse a letter, including in bypass-permissions sessions.
 The [recorded live checks](../docs/native-compatibility.md) observed
 unattended delivery. That is an observation, not an exemption from the
 recipient's permissions. postbag does not claim a sender permission mode or
-change the recipient's policy. The human's letter budget is the brake. When
-it is spent, `send` refuses, and only a human outside the agent sessions can
-open another exchange. Use postbag only between sessions you would trust
-with the same task.
+change the recipient's policy. Use postbag only between sessions you would
+trust with the same task.
+
+Version 2.0 has no letter budget or rate limit. The ordinary footer asks for
+replies that advance the task. A final letter asks for no reply to that letter,
+even if its body asks for one. Both are instructions to a model. They are not
+a security boundary against prompt injection or a guarantee against loops.
+A final letter does not disable later sends.
+
+MCP calls run with the server's permissions, outside the agent's command
+sandbox. Host tool approvals can give the human a chance to intervene at
+each send. A host configured to approve calls automatically offers no such
+pause. Recipient inbound policy can hold or refuse a letter where the host
+provides it. Body and page caps, worker-result depth checks, native timeouts
+and nonblocking MCP locks remain, but they do not bound the correspondence.
+
+Ending a Claude process closes its inbox. Closing a Codex client can leave
+its persisted thread available for queued letters. Making a ledger unwritable
+prevents new write opens of it, but a process that already holds the file can
+finish. Postbag does not restore the mode of an existing file. None of these
+actions recalls queued letters or cancels a submission already in flight.
 
 ## What "delivered" means
 

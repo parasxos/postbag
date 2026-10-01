@@ -12,4 +12,4 @@ body:
     id: proposal
     attributes:
       label: Suggested change
-      description: Explain how it fits two peers, one ledger, and a human-set letter budget.
+      description: Explain how it fits two peers, one ledger, and native delivery, with the agents and their hosts deciding when to stop.
