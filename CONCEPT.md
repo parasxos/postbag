@@ -24,23 +24,25 @@ hosts that run them, not by postbag.
 | Verb | Who | Effect |
 |---|---|---|
 | `join <vendor> [name]` | a peer, from inside its own session | records its door under a name, by default the vendor. Creates the bag if it does not exist. |
-| `send @name` | a peer, from inside its own session | knocks on that door, then records the letter. `--final` marks the letter as closing the thread. |
+| `send @name` | a peer, from inside its own session | knocks on that door, then records the letter. `--final` marks the letter as one that asks for no reply. |
 | `read` | anyone | prints the ledger, preceded by one line: the names held now and the number of letters |
 | `bags` | anyone | inventories existing ledgers in scope: letters recorded, last recorded letter time, and registered names with vendors |
 
 Every verb takes an optional `--bag NAME` before it. `join` creates any
-bag that does not exist. `send` and `read` refuse one. `join` is the
-creating verb because it is always the first write: a `send` needs a name
-that the sender's door holds in that bag, and a bag with no join holds none.
-A mistyped `--bag` on `join` therefore leaves a bag with one join and no
-letters. `bags` lists it, no verb removes it, and it is a file you delete.
+bag that does not exist, default, named or path alike. `send` and `read`
+on a missing bag create nothing, not even a directory, and refuse: `send`
+points the caller to `join`, `read` points to `bags`. A `join` that is
+refused creates nothing either. `join` is the creating verb because it is
+the first write in practice: a `send` needs a name that the sender's door
+holds in that bag, and a bag with no join holds none. A mistyped `--bag`
+on `join` therefore leaves a bag with one join and no letters. `bags`
+lists it, no verb removes it, and it is a file you delete.
 
 A bare command selects `POSTBAG_LEDGER`, a path, and otherwise `default`,
 however many bags exist. `--bag` overrides both. In `POSTBAG_LEDGER`, `~`
 is expanded and a relative path is made absolute for display and for
 generated commands, and `--bag` takes the path as the shell hands it. A path
-equal to the default ledger displays as `default`. `read` and `bags` create
-nothing.
+equal to the default ledger displays as `default`.
 
 ## Inventory
 
@@ -110,12 +112,15 @@ Joining creates a bag from either interface. See
    A letter ends with the way to reply: in a named or default bag, the
    Postbag MCP send tool for a reader that has it, and in every bag the
    one shell command that replies. Both name the bag and the sender. The
-   same ending says to reply only when the letter needs an answer, that
-   delivery is already recorded so confirming receipt is never an answer,
-   and not to end a reply with a question or offer that needs no answer.
-   A final letter ends instead with one line that says the thread is
-   closed and not to reply even if the body asks for one, and it carries
-   no reply command. Neither agent needs prior instruction.
+   same ending says to reply only when a reply advances the task, to send
+   no courtesy acknowledgement and no unsolicited delivery check, and not
+   to add a question or offer that needs no answer. A receipt that a human
+   asked for is task, not courtesy. A final letter ends instead with one
+   line that says not to reply to it even if its body asks for a reply,
+   and it carries no reply command. The flag is the sender's statement
+   and the footer is guidance to a model, not enforcement: the next send
+   in the bag, from anyone, is legal and ordinary. Neither agent needs
+   prior instruction.
 4. **The ledger is the truth.** The ledger records completed sends: a
    letter is in it if and only if it was delivered and then recorded.
    Delivered means submitted through the door, the socket write returned
@@ -130,20 +135,32 @@ Joining creates a bag from either interface. See
    bag. History is a file you can `cat`. Ledgers written before names, and
    ledgers written when bags still had budgets, read without rewriting.
    The roster in an envelope is a snapshot at submission, not a promise of
-   what remains when the letter is read.
+   what remains when the letter is read. A letter record carries `final`
+   only when it is true. Every record keeps its line number `n`, including
+   joins and historical opens, and `read N` and MCP paging address records
+   by `n`. A letter's displayed number is its position among the bag's
+   letters.
 5. **postbag has no brake.** It sets no limit on how many letters a bag
    holds or how fast they arrive, and it has no verb a human runs from a
-   terminal to stop two sessions. A host that confirms tool calls bounds
-   the conversation. A host that does not, does not, and a letter arriving
-   in a session that confirms nothing is acted on by that session's model
-   alone. The controls that exist are the hosts' own: end a session, and
-   its door stops answering. Make the bag unwritable, and both `send` and
-   `join` refuse. Set the recipient's inbound policy to hold or refuse
-   letters where the host offers one. What postbag adds is the envelope,
-   which tells every reader when not to answer, and refusals that tell the
-   agent to stop and ask the human. That suffix is an instruction to the
-   agent, not a claim that the human holds a verb. Who may run `join` and
-   `send` is decided by the session variables the vendors themselves export.
+   terminal to stop two sessions. A host that confirms each tool call
+   gives its human a chance to intervene at every letter. That is an
+   opportunity, not a bound. A host that confirms nothing leaves every
+   letter to its model, and the footer is then the last word postbag has.
+   The footer and the final flag are guidance, not a security boundary.
+   The controls that exist belong to the hosts and the filesystem, and
+   each has limits. Ending a Claude session closes its inbox, so sends to
+   it refuse. Ending a Codex client does not: its saved thread can still
+   accept queued letters, which it reads when resumed. Neither recalls a
+   letter already queued or cancels a send in flight. Making the bag
+   unwritable stops new opens of the ledger, so later `send` and `join`
+   refuse, but a process that already holds the ledger finishes, and
+   postbag resets the file mode only when it creates the file. A
+   recipient's inbound policy, where its host offers one, can hold or
+   refuse letters before its model sees them. Refusals tell the agent to
+   stop and ask the human. That suffix is an instruction to the agent,
+   not a claim that the human holds a verb. Who may run `join` and
+   `send` is decided by the session variables the vendors themselves
+   export.
 6. **Everything the agents share is the repository.** The bridge moves
    text, never files. Work products travel through git.
 
@@ -179,7 +196,7 @@ Letter 4 from @ada to @bob via postbag (bag acceptance).
 
 <body>
 
-Reply only if this letter needs an answer. Delivery is already recorded, so do not reply only to acknowledge or confirm receipt, and do not end a reply with a question or offer you do not need answered.
+Reply only when a reply advances the task. Do not send courtesy acknowledgements or unsolicited delivery checks, and do not add a question or offer that needs no answer.
 If you have Postbag MCP tools, call postbag_send with bag acceptance and to @ada.
 Otherwise reply with:
 postbag --bag acceptance send @ada - <<'POSTBAG'
@@ -199,24 +216,33 @@ Letter 5 from @ada to @bob via postbag (bag acceptance).
 
 <body>
 
-This letter closes the thread. Do not reply, even if the body asks for one.
+Final letter. Do not reply to this letter, even if its body asks for a reply.
 ```
 
-A final letter closes nothing in the bag. The next letter, from anyone,
-is ordinary. It is the sender's way to end without inviting an answer.
+`final` is a strict boolean, absent meaning false, refused before any
+transport or ledger write when it is anything else. A final letter closes
+nothing in the bag. The next letter, from anyone, is ordinary. `read`
+marks a final letter, and receipts and MCP reads return the flag. Nothing
+infers it from history.
 
 ## Compatibility
 
-A 2.0 bag has no `open` record and a 1.x `send` in it refuses with "no
-exchange is open". Mixed versions are not supported: a 2.0 side always
-sends, a 1.x side sends only inside a 1.x budget, and an `open` written by
-a 1.x tool into a 2.0 bag is honoured by 1.x and ignored by 2.0. A 2.0 tool
-reads every 1.x bag. Its `open` records print as rows of history that change
-nothing, and its letters are numbered by their position among the bag's
-letters, so a letter that 1.x showed as the fourth of its second exchange
-may show as the sixteenth. `open` is no longer a verb, and `postbag open`
-is an unknown verb like any other. The recovery hint for a missing bag
-names `join`, since `join` creates it.
+A bag created by 2.0 has no `open` record. A bag reused from 1.x keeps
+its `open` records as inert history. Mixed versions are not supported,
+and nothing negotiates or rejects them: a 2.0 side always sends, a 1.x
+side sends only inside the latest budget retained in that bag and counts
+2.0 letters against it, past zero, while reading the `final` field and
+hiding it. An `open` written by a 1.x tool into a 2.0 bag is honoured by
+1.x and ignored by 2.0. A 2.0 tool reads every 1.x bag. Its `open` records
+print as rows of history that change nothing, and its letters are numbered
+by their position among the bag's letters, so a letter that 1.x showed as
+the fourth of its second exchange may show as the sixteenth. Record line
+numbers never change. `open` is no longer a verb, and `postbag open` is an
+unknown verb like any other. The recovery hint for a missing bag on `send`
+names `join`, since `join` creates it. The MCP server and its worker
+carry a protocol version, so a running 1.x server that launches a 2.0
+worker file, or the reverse after a downgrade, refuses before any transport
+or ledger write and says to reconnect the server.
 
 ## What is deliberately absent
 
@@ -225,6 +251,8 @@ Postbag configuration file, a protocol document for the agents, broadcast,
 rooms, presence, peer discovery, a bag index, a current bag, bag liveness,
 and, since 2.0, a letter budget, a rate limit and a human-only verb. Each
 was considered and found to add a noun without adding a capability, or to
-duplicate a control the hosts already have. The bag holds any number of
+duplicate a control the hosts already have. Resource limits are not
+budgets and stay: the letter body cap, the page size, the result depth
+cap, the native timeouts and the nonblocking ledger lock. The bag holds any number of
 doors and a letter has one recipient. Two sessions are the supported use.
 More is experimental and promised nothing.
