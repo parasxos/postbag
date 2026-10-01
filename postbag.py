@@ -1032,10 +1032,10 @@ def serve_mcp(a):
         fail("mcp takes no bag, each tool call names its own", context=False, error_code="invalid_input")
     try:
         import postbag_mcp
-        postbag_mcp.serve()
-    except ImportError:
-        fail("MCP support is not installed, install it with: pip install 'postbag[mcp]'",
+    except ImportError:  # a broken installation; a missing SDK is reported by serve() itself
+        fail("the MCP module is not installed beside postbag, reinstall with: pip install 'postbag[mcp]'",
              context=False, error_code="invalid_input")
+    postbag_mcp.serve()  # exits 2 with the same install hint as postbag-mcp when the SDK is missing
 
 
 def run(a):

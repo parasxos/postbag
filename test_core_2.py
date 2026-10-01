@@ -602,15 +602,25 @@ def test_postbag_mcp_refuses_a_bag_selection_before_importing_the_server(tmp_pat
     assert not (tmp_path / "home").exists() and not Path("/tmp/postbag-launcher-never.jsonl").exists()
 
 
-def test_postbag_mcp_without_the_extra_names_the_install_command(tmp_path, monkeypatch):
+def test_postbag_mcp_without_the_sdk_exits_like_postbag_mcp(tmp_path, monkeypatch, capsys):
+    """The real server module with the SDK blocked: the same exit and hint as postbag-mcp."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for name in [m for m in sys.modules if m == "mcp" or m.startswith("mcp.")] + ["mcp"]:
+        monkeypatch.setitem(sys.modules, name, None)  # every later import of the SDK fails
+    with pytest.raises(SystemExit) as stopped:
+        postbag.main(["mcp"])
+    assert stopped.value.code == 2
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "pip install 'postbag[mcp]'" in out.err
+    assert not (tmp_path / "home").exists()
 
-    def missing():
-        raise ImportError("No module named 'mcp'")
-    _fake_mcp_module(monkeypatch, missing)
+
+def test_postbag_mcp_with_a_missing_server_module_refuses(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setitem(sys.modules, "postbag_mcp", None)
     error = refusal(lambda: postbag.main(["mcp"]))
-    assert error.error_code == "invalid_input"
-    assert "pip install 'postbag[mcp]'" in str(error)
+    assert error.error_code == "invalid_input" and "pip install 'postbag[mcp]'" in str(error)
 
 
 def test_the_cli_lists_mcp_as_a_launcher(cli):
