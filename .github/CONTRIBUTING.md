@@ -64,6 +64,7 @@ Commit subjects are short and imperative.
    pin README links to current documentation at the new tag for PyPI.
    Match `server.json`'s server version, PyPI package version, and
    `postbag[mcp]==<version>` runtime argument to that version. Keep the
+   Dockerfile's `ARG POSTBAG_VERSION` on that version too. Preserve the
    `mcp-name: io.github.parasxos/postbag` ownership marker in the README that
    goes into the distribution. The registry checks the published PyPI
    description, not the repository's current README.

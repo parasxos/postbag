@@ -4,8 +4,7 @@ Postbag lets existing Claude Code or Codex sessions on one machine exchange
 letters and keep a local record. It does not start agents or connect machines.
 Supported platforms are macOS and Linux, with Python 3.10 or later.
 
-The `postbag mcp` launcher and uvx examples below require 2.2.0. Until that
-release is published, install 2.1.0 and use its `postbag-mcp` command.
+The `postbag mcp` launcher and uvx examples below require 2.2.0 or later.
 
 ## Install and register
 
@@ -81,5 +80,5 @@ an inbox share one peer, so a subagent can withdraw the parent's registration.
 - Keep raw ledgers out of logs and repositories. They contain letter bodies
   and native endpoint credentials. Use the redacted read and inventory tools.
 
-See [MCP setup and outcomes](docs/mcp.md) and
-[native compatibility evidence](docs/native-compatibility.md).
+See [MCP setup and outcomes](https://github.com/parasxos/postbag/blob/v2.2.0/docs/mcp.md) and
+[native compatibility evidence](https://github.com/parasxos/postbag/blob/v2.2.0/docs/native-compatibility.md).
