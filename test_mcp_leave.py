@@ -233,10 +233,30 @@ def test_departed_sender_and_recipient_refuse_without_rejoin_advice(wire):
             for sender, target in ((THREAD_A, "bob"), (THREAD_B, "ada")):
                 response = await client.call_tool("postbag_send", {"to": target, "body": "queued work"}, meta=meta(sender))
                 value = read_recovery(response, submission_state="not_submitted")
-                assert "left" in value["message"]
+                expected = "do not join again unless the human asks you to resume" if sender == THREAD_A else "it left this bag at"
+                assert expected in value["message"]
                 assert left_at in value["message"]
                 assert wire.path().read_bytes() == before
             checked_read(await client.call_tool("postbag_read", {}))
+    asyncio.run(exercise())
+    assert wire.calls() == []
+
+
+def test_displaced_sender_hears_that_its_taker_left(wire):
+    wire.seed(codex_join("ada", THREAD_A), codex_join("ada", THREAD_B), codex_join("bob", STARTUP_THREAD))
+    taken_at = wire.rows()[1]["at"]
+
+    async def exercise():
+        async with wire.session() as client:
+            checked_leave(await client.call_tool("postbag_leave", {}, meta=meta(THREAD_B)), record=4)
+            before = wire.path().read_bytes()
+            left_at = wire.rows()[-1]["at"]
+            value = checked(await client.call_tool("postbag_send", {"to": "bob", "body": "old queued task"}, meta=meta()), ok=False)
+            assert value["error_code"] == "refused" and value["submission_state"] == "not_submitted"
+            assert f"your name @ada was taken by the codex door that joined at {taken_at}, which left this bag at {left_at}" in value["message"]
+            assert "your name @ada left this bag" not in value["message"]
+            assert_no_doors(value)
+            assert wire.path().read_bytes() == before
     asyncio.run(exercise())
     assert wire.calls() == []
 
@@ -293,6 +313,7 @@ def test_leave_rejects_missing_or_invalid_identity_and_unknown_arguments(wire):
                                ("_meta", meta()), ("extra", True)):
                 response = await client.call_tool("postbag_leave", {key: value}, meta=meta())
                 outcome = checked(response, ok=False)
+                assert outcome["error_code"] == "invalid_input"
                 assert outcome["submission_state"] is None
                 assert wire.path().read_bytes() == before, key
                 assert THREAD_A not in wire_text(response)
