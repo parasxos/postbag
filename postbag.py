@@ -24,7 +24,7 @@ from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "2.1.0.dev0"
+__version__ = "2.1.0"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
