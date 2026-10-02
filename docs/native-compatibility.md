@@ -1,5 +1,56 @@
 # Native compatibility checks
 
+## 2 October 2026: installed 2.2.2 release candidate
+
+An independently built wheel from a clean archive of
+`94ad0853ff1a80014954d0972fce2adc4aa00eb2` passed the full native gate on its
+first execution. Both fresh hosts used the installed `postbag mcp` launcher
+from one isolated venv. Package and runtime versions were `2.2.2`. Installed
+modules matched the source and wheel and stayed unchanged. Both launchers
+exposed identical five-tool catalogs with current and legacy SDK clients,
+and all four checks returned an empty private inventory.
+
+The run used macOS 27.0.1, build 26A434, Python 3.14.6 and MCP SDK 2.2.0.
+Codex CLI **0.159.0-alpha.12.1** reported `gpt-6.1-sol`. Claude Code
+**2.1.287** reported `claude-opus-5-5`. The unwrapped native `codex queue`
+used default discovery in a private `CODEX_HOME`, without `--remote`, and
+reached a disposable persisted thread. Personal daemon routing and native
+Linux delivery were not tested.
+
+| Check | Observed result |
+|---|---|
+| Ordinary delivery | Both sessions received the initial letter and reply. The two incoming reply turns were created by the native queue, separate from direct harness prompts. |
+| Final letter | After recipient receipt and turn completion, 30.0605 seconds elapsed with no send attempt or ledger change. Both hosts stayed alive. |
+| Leave and refusal | MCP leave withdrew the recipient. The next send returned `refused` and `not_submitted`, included the departure time and preserved the ledger bytes. Its body was not received. |
+| Deliberate rejoin | An explicit later harness instruction caused rejoining. A later ordinary letter and reply were both received. |
+| Accounting | Ten model-authored calls produced three joins, one leave and five submitted letters. One additional send attempt was refused. Nine records and five letter ordinals were contiguous. |
+| Cleanup | Both clients and the private server exited 0 without forced shutdown. Native endpoints closed and the private authentication alias was removed. |
+
+An independent audit checked 52 assertions against raw tool events,
+recipient turns, timestamps, ledger records and installed files. Claude's
+inbound envelopes were not exposed by its event stream. Its exact-body
+stdout receipt markers followed by completed peer-origin turns corroborated
+receipt. Those markers were harness instrumentation, not Postbag replies.
+The final window is evidence for this run, not general loop prevention or
+an isolated test of the footer. Leave did not test recall of queued letters.
+
+The command sandbox reported read-only access, disabled network access and
+`approvalPolicy: never`. Claude was launched with `--permission-mode manual`
+and reported `permissionMode: default`. Preauthorized fixture tools required
+no human prompt. `crossSessionInbound` was unset with empty Claude setting
+sources. Native own-child classification was unobserved. No personal
+configuration or installation changed. Claude used its existing login and
+could write its usual caches or telemetry.
+
+Candidate provenance:
+
+```text
+wheel          fd98de343c5d4089d27e9b39a80621085e224ffe4b8bebd55ab512cb5706c9d7
+postbag.py     18d76fb0643504e381c4bf880bc9b177b8b2e98beff88c2c0d74132f86cc780c
+postbag_mcp.py fe354cca37c92c6ce1e5ceaba71a37f0218542834124b1b31ee7528b7f4113c8
+harness        bc30165fca08928a4f959ee22465d0beab5ac8c1ccd82e4676d9f3bcaa9fcc71
+```
+
 ## 2 October 2026: installed 2.2.1 release candidate
 
 A clean wheel from `87777fc2c24f97cd4fdbbf77734a3065491930ef` passed the
