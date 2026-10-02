@@ -1,113 +1,97 @@
 <!-- mcp-name: io.github.parasxos/postbag -->
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/parasxos/postbag/v2.2.1/docs/assets/logo.png" width="96" height="96" alt="Postbag logo">
+<img src="https://raw.githubusercontent.com/parasxos/postbag/v2.2.2/docs/assets/logo.png" width="96" height="96" alt="Postbag logo">
 
 # postbag
 
-**Two agents, one bag of letters.**
+**Let Codex and Claude Code talk to each other.**
 
-Your Claude Code and Codex sessions write to each other. Ask one to review
-the other's diff, split a task, or get a second opinion, without copying
-text between windows.
+A local MCP server. Ask Codex to review what Claude Code just wrote, or the
+other way round. The answer arrives as a new turn. No copying text between
+windows.
 
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
 [![postbag MCP server](https://glama.ai/mcp/servers/parasxos/postbag/badges/score.svg)](https://glama.ai/mcp/servers/parasxos/postbag)
-[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/parasxos/postbag/blob/v2.2.1/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/parasxos/postbag/blob/v2.2.2/LICENSE)
 
 </div>
 
-![Scripted demo: a Codex identity and a Claude Code identity call two postbag MCP servers to join a bag, exchange a review, mark the last letter final, leave and read the bag](https://raw.githubusercontent.com/parasxos/postbag/v2.2.1/docs/assets/demo.gif)
-
-<sub>Scripted calls to two real postbag MCP servers, with fake native doors.
-[Demo source](https://github.com/parasxos/postbag/blob/v2.2.1/docs/demo_mcp.py).</sub>
-
-## What it does
-
-- **Native delivery.** A letter arrives in the recipient as a new user turn,
-  through its own input: Claude Code's inbox or `codex queue`. postbag adds
-  no delivery daemon, polling or hooks.
-- **One shared record.** Every join, letter and leave goes into one
-  append-only ledger per bag, which both agents and you can read.
-- **Set up by the agents.** Joining a bag creates it. Nothing to run in a
-  separate terminal.
-- **The session is the sender.** Identity comes from the host, never from
-  tool arguments.
+![Scripted demo in two panes, Claude Code and Codex. Both join bag review with postbag_join. Claude Code sends a review request with postbag_send, and it arrives in Codex as letter 1. Codex replies with three findings as letter 2, and Claude Code sends final letter 3. postbag_read reports 3 letters.](https://raw.githubusercontent.com/parasxos/postbag/v2.2.2/docs/assets/demo.gif)
 
 ## Install
 
+Needs Python 3.10 or later, Claude Code and a recent Codex CLI with
+`codex queue`. Run both sessions on one machine with the same postbag version.
+Delivery is tested on macOS.
+
 ```sh
 pipx install 'postbag[mcp]'
+claude mcp add --scope user postbag -- "$(command -v postbag-mcp)"
+codex mcp add postbag -- "$(command -v postbag-mcp)"
 ```
 
-Python 3.10 or later, on macOS or Linux. Then register the server once in
-each host.
+Start a new session in each app, then run `/mcp`. postbag should list five
+tools. For uvx and other setups, see
+[MCP setup](https://github.com/parasxos/postbag/blob/v2.2.2/docs/mcp.md).
 
-**Claude Code**
+Or ask your agent: *Install postbag using
+[llms-install.md](https://github.com/parasxos/postbag/blob/v2.2.2/llms-install.md).*
 
-```sh
-claude mcp add --transport stdio --scope user postbag -- "$(command -v postbag-mcp)"
-```
+## Quick start
 
-**Codex**, in `~/.codex/config.toml`, with the path that `command -v postbag-mcp` prints:
+A bag is a named conversation. Both agents join the same one. Open Codex and
+Claude Code in the same repository, so both see the same code.
 
-```toml
-[mcp_servers.postbag]
-command = "/Users/you/.local/bin/postbag-mcp"
-tool_timeout_sec = 60
-```
+1. In Codex:
+   > Join postbag bag "review" as codex.
+2. In Claude Code:
+   > Join postbag bag "review" as claude, then ask codex to review my last commit.
 
-Reconnect or restart each host's MCP server, then check that the five
-postbag tools are listed, for example with `/mcp` in Claude Code.
-Codex delivery uses the `codex` binary's `queue` command, 0.149 or later.
-Set `POSTBAG_CODEX` if it is neither on `PATH` nor in the ChatGPT app.
-To run without installing, as listed in the official MCP registry:
-`uvx --with 'postbag[mcp]==2.2.1' postbag@2.2.1 mcp`.
-Agents can follow [llms-install.md](https://github.com/parasxos/postbag/blob/v2.2.1/llms-install.md).
+Codex joins first so Claude Code has someone to write to. Approve the postbag
+tools when asked. Codex gets the request as a new turn, and its reply lands in
+Claude Code the same way. Either side can end with a final letter, which asks
+for no reply.
 
-## Use it
+## What to use it for
 
-Open a Codex session and a Claude Code session in the same repository.
+- **Cross review.** Claude Code finishes a change and asks Codex to review the diff before you commit.
+- **Split work.** Codex writes the tests while Claude Code writes the implementation. They compare notes by letter.
+- **Second opinion.** When one agent is stuck on a bug, it asks the other for a fresh read.
 
-1. In Codex: *"Join the postbag bag review as bob and wait for letters."*
-2. In Claude Code: *"Join bag review as ada and ask bob to review my last commit."*
+## Tools
 
-Each letter ends with how to reply, so neither agent needs instructions.
-Watch the conversation with `postbag --bag review read`. When the work is
-done, ada can send a final letter, which asks for no reply, and either side
-can leave the bag.
-
-## The five tools
+Your agents call these. You just ask in plain words.
 
 | Tool | What it does |
 |---|---|
 | `postbag_join` | Registers this session under a name in a bag, creating the bag if needed. |
 | `postbag_send` | Sends a letter to a name in the bag. `final: true` asks for no reply. |
 | `postbag_read` | Pages through the bag's history. |
-| `postbag_bags` | Lists local bags with their letter counts and registered names. |
+| `postbag_bags` | Lists local bags with letter counts and registered names. |
 | `postbag_leave` | Withdraws this session from the bag. History stays. |
 
-The CLI has the same verbs: `postbag join`, `send`, `read`, `bags` and `leave`.
+## How it works
 
-## Good to know
+- **Native delivery.** Letters arrive as a new turn in the other session,
+  through its own input. postbag adds no delivery daemon, polling or hooks.
+- **No setup prompts.** Every letter ends with how to reply, or asks for no reply.
+- **One shared history.** Each bag keeps a local log that either agent can page
+  through with `postbag_read`.
 
-- **No brake.** postbag sets no letter limit. Your hosts' tool approvals and
-  the agents' judgement decide how long a conversation runs.
-- **A letter is a user turn.** Connect only sessions you trust with the
-  task. The ledger holds each Claude session's inbox token. It is created
-  with mode `0600`, so keep it out of git and logs.
-- **Same machine, same version.** Two sessions are the supported use. After
-  an upgrade, upgrade both and reconnect both MCP servers.
-- **Restarted session.** If a session comes back with a new identity and
-  should keep corresponding, ask it to join the bag again under the same name.
-- **Submitted, not read.** A send returns once the recipient's door took the
-  letter, not when the agent read it.
+## Security
 
-[Concept](https://github.com/parasxos/postbag/blob/v2.2.1/CONCEPT.md) ·
-[MCP setup and limits](https://github.com/parasxos/postbag/blob/v2.2.1/docs/mcp.md) ·
-[Security](https://github.com/parasxos/postbag/blob/v2.2.1/.github/SECURITY.md) ·
-[Changelog](https://github.com/parasxos/postbag/blob/v2.2.1/CHANGELOG.md) ·
-[Contributing](https://github.com/parasxos/postbag/blob/v2.2.1/.github/CONTRIBUTING.md) ·
-[Tools that do more](https://github.com/parasxos/postbag/blob/v2.2.1/docs/readme-research.md) ·
-[MIT](https://github.com/parasxos/postbag/blob/v2.2.1/LICENSE)
+- A delivered letter becomes a user turn in the other agent. Connect only
+  sessions you trust with the task.
+- There is no letter limit. Keep tool approvals on to check each send before it goes.
+- The ledgers under `~/.postbag/` hold each Claude Code session's inbox token,
+  with file mode `0600`. Never commit or share them.
+
+See [SECURITY.md](https://github.com/parasxos/postbag/blob/v2.2.2/.github/SECURITY.md).
+
+[MCP setup](https://github.com/parasxos/postbag/blob/v2.2.2/docs/mcp.md) ·
+[Concept](https://github.com/parasxos/postbag/blob/v2.2.2/CONCEPT.md) ·
+[Changelog](https://github.com/parasxos/postbag/blob/v2.2.2/CHANGELOG.md) ·
+[Contributing](https://github.com/parasxos/postbag/blob/v2.2.2/.github/CONTRIBUTING.md) ·
+[MIT](https://github.com/parasxos/postbag/blob/v2.2.2/LICENSE)
