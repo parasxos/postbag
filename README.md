@@ -75,7 +75,7 @@ Your agents call these. You just ask in plain words.
 ## How it works
 
 - **Native delivery.** Letters arrive as a new turn in the other session,
-  through its own input. No daemon, polling or hooks.
+  through its own input. postbag adds no delivery daemon, polling or hooks.
 - **No setup prompts.** Every letter ends with how to reply, or asks for no reply.
 - **One shared history.** Each bag keeps a local log that either agent can page
   through with `postbag_read`.
