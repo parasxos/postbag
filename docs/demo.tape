@@ -1,30 +1,16 @@
 # vhs docs/demo.tape  (https://github.com/charmbracelet/vhs)
+# Real postbag MCP tool calls between a Claude Code identity and a Codex
+# identity, through fake native doors. See docs/demo_mcp.py.
 Output docs/assets/demo.gif
 Set Shell bash
-Set FontSize 18
-Set Width 1180
-Set Height 700
-Set Padding 18
+Set FontSize 16
+Set Width 1260
+Set Height 800
+Set Padding 20
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 40ms
 
 Hide
-Type "source docs/demo-env.sh; clear"
+Type "clear; ${PYTHON:-python3} docs/demo_mcp.py"
 Enter
-Sleep 1.5s
 Show
-
-Type "# postbag demo: real commands against fake doors, no live session" Enter Sleep 800ms
-
-Type "# in the first Claude Code session"  Enter
-Type "in-ada postbag join claude ada" Sleep 300ms Enter Sleep 900ms
-Type "# in the second Claude Code session" Enter
-Type "in-bob postbag join claude bob" Sleep 300ms Enter Sleep 900ms
-Type "# ada writes, bob answers, ada marks the last letter final" Enter
-Type `in-ada postbag send @bob "Review parser.py, top three findings please."` Sleep 300ms Enter Sleep 1400ms
-Type `in-bob postbag send @ada "Empty input, swallowed date errors, no field bound."` Sleep 300ms Enter Sleep 1400ms
-Type `in-ada postbag send --final @bob "Fixed all three, merging."` Sleep 300ms Enter Sleep 1400ms
-Type "# bob withdraws from the bag" Enter
-Type "in-bob postbag leave" Sleep 300ms Enter Sleep 900ms
-Type "postbag read" Sleep 300ms Enter
-Sleep 4s
+Sleep 36s

@@ -2,6 +2,7 @@
 
 import errno
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -14,7 +15,9 @@ from types import SimpleNamespace
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().with_name("postbag.py")
+# Children run the postbag module this process selected: the checkout's in the source
+# layout, the installed one otherwise. Never a path derived from this test file.
+SCRIPT = Path(importlib.util.find_spec("postbag").origin).resolve()
 PRIVATE_BODY = "INVENTORY-PRIVATE-LETTER-BODY"
 PRIVATE_SOCKET = "/tmp/inventory-private-never-used.sock"
 PRIVATE_TOKEN = "inventory-private-fake-token"

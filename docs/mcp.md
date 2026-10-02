@@ -55,14 +55,14 @@ installation. The MCP extra and command select the same version:
 ```toml
 [mcp_servers.postbag]
 command = "/absolute/path/to/uvx"
-args = ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+args = ["--with", "postbag[mcp]==2.2.1", "postbag@2.2.1", "mcp"]
 tool_timeout_sec = 60
 ```
 
 For Claude Code:
 
 ```sh
-claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/uvx --with 'postbag[mcp]==2.2.0' postbag@2.2.0 mcp
+claude mcp add --transport stdio --scope user postbag -- /absolute/path/to/uvx --with 'postbag[mcp]==2.2.1' postbag@2.2.1 mcp
 ```
 
 Generic stdio configuration uses the same command and arguments:
@@ -72,7 +72,7 @@ Generic stdio configuration uses the same command and arguments:
   "mcpServers": {
     "postbag": {
       "command": "/absolute/path/to/uvx",
-      "args": ["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]
+      "args": ["--with", "postbag[mcp]==2.2.1", "postbag@2.2.1", "mcp"]
     }
   }
 }
@@ -419,7 +419,7 @@ with private HOME and `ResourceWarning` as an error. See the provenance, interru
 first attempt and native runtime versions in
 [native compatibility](native-compatibility.md).
 
-The `test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
+The `tests/test_mcp*.py` files use the real SDK and stdio subprocesses with isolated
 homes, fake native executables, and private Unix sockets. The frozen 2.1
 source at `6489151` passed **665 tests** with private HOME and
 `ResourceWarning` as an error. Installed-wheel runs outside the source

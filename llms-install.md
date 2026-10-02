@@ -35,7 +35,7 @@ The `postbag mcp` launcher and uvx examples below require 2.2.0 or later.
    ```
 
    Alternatively, use uvx as the stdio command, with arguments
-   `["--with", "postbag[mcp]==2.2.0", "postbag@2.2.0", "mcp"]`.
+   `["--with", "postbag[mcp]==2.2.1", "postbag@2.2.1", "mcp"]`.
    Keep both version pins equal. This does not put the CLI on shell `PATH`.
    Do not register both launch methods under different names.
 
@@ -80,5 +80,5 @@ an inbox share one peer, so a subagent can withdraw the parent's registration.
 - Keep raw ledgers out of logs and repositories. They contain letter bodies
   and native endpoint credentials. Use the redacted read and inventory tools.
 
-See [MCP setup and outcomes](https://github.com/parasxos/postbag/blob/v2.2.0/docs/mcp.md) and
-[native compatibility evidence](https://github.com/parasxos/postbag/blob/v2.2.0/docs/native-compatibility.md).
+See [MCP setup and outcomes](https://github.com/parasxos/postbag/blob/v2.2.1/docs/mcp.md) and
+[native compatibility evidence](https://github.com/parasxos/postbag/blob/v2.2.1/docs/native-compatibility.md).

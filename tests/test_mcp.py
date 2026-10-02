@@ -26,8 +26,10 @@ except ImportError:
     pytest.skip("MCP wire checks require mcp 2.x", allow_module_level=True)
 
 
-ROOT = Path(__file__).resolve().parent
 SERVER_SCRIPT = Path(importlib.util.find_spec("postbag_mcp").origin)
+# Children import from the directory the server module was selected from: the checkout root
+# in the source layout, site-packages in the installed layout. Never this test directory.
+ROOT = SERVER_SCRIPT.resolve().parent
 THREAD_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 THREAD_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 STARTUP_THREAD = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"

@@ -1,5 +1,6 @@
 """Bag selection and scoped commands through an isolated public CLI."""
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,9 @@ from types import SimpleNamespace
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().with_name("postbag.py")
+# Children run the postbag module this process selected: the checkout's in the source
+# layout, the installed one otherwise. Never a path derived from this test file.
+SCRIPT = Path(importlib.util.find_spec("postbag").origin).resolve()
 THREADS = {"ada": "fake-bag-thread-ada", "bob": "fake-bag-thread-bob"}
 
 

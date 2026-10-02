@@ -1,5 +1,53 @@
 # Native compatibility checks
 
+## 2 October 2026: installed 2.2.1 release candidate
+
+A clean wheel from `87777fc2c24f97cd4fdbbf77734a3065491930ef` passed the
+native gate on its first execution. Both hosts ran the installed `postbag mcp`
+launcher. The package and runtime reported `2.2.1`. The core and adapter
+loaded from the isolated venv, matched the reviewed source and wheel, and
+remained unchanged throughout the run. Separate checks found identical
+five-tool catalogs through `postbag mcp` and `postbag-mcp` with current and
+legacy SDK clients. Each returned an empty private inventory.
+
+The run used macOS 27.0.1, build 26A434, Python 3.14.6 and MCP SDK 2.2.0.
+Codex CLI **0.159.0-alpha.12.1** reported model `gpt-6.1-sol`. Claude Code
+**2.1.287** reported `claude-opus-5-5`. The unwrapped native `codex queue`
+used default discovery in a private `CODEX_HOME`, without a `--remote`
+override, and reached a disposable persisted thread. The user's personal
+daemon and native Linux delivery were not tested.
+
+| Check | Observed result |
+|---|---|
+| Ordinary delivery | The initial letter and reply were observed by both recipient sessions. |
+| Final letter | After receipt and turn completion, 30.1091 seconds elapsed with no recipient send attempt or ledger change. Both hosts stayed alive. |
+| Leave and refusal | The recipient left through MCP. The next send refused with `not_submitted` and the departure time, preserving the ledger bytes. |
+| Deliberate rejoin | An explicit later harness instruction caused the recipient to join again. A later ordinary letter and reply were both received. |
+| Accounting | Ten model-authored tool calls produced three joins, one leave and five submitted letters, with one additional send attempt refused. |
+| Cleanup | Both clients and the private server exited 0, without forced shutdown. Native endpoints closed and the private authentication alias was removed. |
+
+Receipt checks correlated tool arguments, outcomes, ledger records and
+completed recipient turns. Claude's local stdout receipt markers were
+harness instrumentation, not Postbag replies. The final observation is
+evidence for this run, not a guarantee that every model obeys the footer.
+
+The command sandbox reported read-only access, disabled network access and
+`approvalPolicy: never`. Claude was launched with `--permission-mode manual`
+and reported `permissionMode: default`. The preauthorized fixture tools
+required no human prompt. `crossSessionInbound` was unset with empty Claude
+setting sources. Native own-child classification was unobserved. No personal
+configuration or installation changed during the gate. Claude used its
+existing login and could write its usual caches or telemetry.
+
+Candidate provenance:
+
+```text
+wheel          76cdd1df87c5980cff0218bb6eb54a1f82147c293cd01ee4c08f70aacee1f4d2
+postbag.py     59a23112e1c6f88f9e39721f423b9d4950e519bbff15f9c0bbb004ae070fd6d2
+postbag_mcp.py fe354cca37c92c6ce1e5ceaba71a37f0218542834124b1b31ee7528b7f4113c8
+harness        81d2c29cf3f957f023933eca47f4e3146f53e1ce38a84401be255775431aaa2c
+```
+
 ## 1 October 2026: installed 2.2.0 launcher candidate
 
 A clean wheel from `c56d92d7ec2d4fb79a39b206db2bb0af8615d5be` passed the

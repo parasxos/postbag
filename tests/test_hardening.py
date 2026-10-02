@@ -1,6 +1,7 @@
 """Regression tests using private ledgers and fake vendor doors only."""
 
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,8 +16,9 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 
-ROOT = Path(__file__).resolve().parent
-SCRIPT = ROOT / ("postbag.py" if (ROOT / "postbag.py").exists() else "postbag")
+# Children run the postbag module this process selected: the checkout's in the source
+# layout, the installed one otherwise. Never a path derived from this test file.
+SCRIPT = Path(importlib.util.find_spec("postbag").origin).resolve()
 SESSION_VARS = {
     "claude": {
         "CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/postbag-test-unused.sock",

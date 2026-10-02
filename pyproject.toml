@@ -50,4 +50,5 @@ py-modules = ["postbag", "postbag_mcp"]
 version = {attr = "postbag.__version__"}
 
 [tool.pytest.ini_options]
-testpaths = ["."]
+testpaths = ["tests"]
+pythonpath = ["."]
