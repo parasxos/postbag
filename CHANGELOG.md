@@ -4,6 +4,19 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [2.2.2] - 2026-10-02
+
+Documentation release. No runtime change beyond the version number.
+
+### Changed
+- The README is a short product page about Codex and Claude Code talking to
+  each other: a one-line pitch, the demo, install and setup for both hosts,
+  a two-prompt quick start, the five MCP tools, and three security notes.
+- The demo shows two panes, Claude Code and Codex, each with its own MCP
+  calls and the letters it receives, from scripted calls to two real servers
+  with stand-in native doors.
+- A 1280x640 social preview image is in `docs/assets/social-preview.png`.
+
 ## [2.2.1] - 2026-10-02
 
 Documentation and repository layout release. No runtime change beyond the
@@ -403,7 +416,8 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/parasxos/postbag/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/parasxos/postbag/releases/tag/v2.2.2
 [2.2.1]: https://github.com/parasxos/postbag/releases/tag/v2.2.1
 [2.2.0]: https://github.com/parasxos/postbag/releases/tag/v2.2.0
 [2.1.0]: https://github.com/parasxos/postbag/releases/tag/v2.1.0

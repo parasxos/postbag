@@ -6,12 +6,12 @@
     "url": "https://github.com/parasxos/postbag",
     "source": "github"
   },
-  "version": "2.2.1",
+  "version": "2.2.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "postbag",
-      "version": "2.2.1",
+      "version": "2.2.2",
       "transport": {
         "type": "stdio"
       },
@@ -20,7 +20,7 @@
         {
           "type": "named",
           "name": "--with",
-          "value": "postbag[mcp]==2.2.1",
+          "value": "postbag[mcp]==2.2.2",
           "description": "The MCP server is the optional mcp extra of the same version."
         }
       ],
