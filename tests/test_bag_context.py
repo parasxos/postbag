@@ -129,7 +129,7 @@ def test_selection_is_fixed_before_stdin_and_through_delivery(isolated, monkeypa
     assert len(envelopes) == 1
     assert f"bag {original})." in envelopes[0]
     assert f"postbag --bag '{original}' send @ada -" in envelopes[0]
-    assert capsys.readouterr().out == f"letter 1 delivered to @bob in bag {original}\n"
+    assert capsys.readouterr().out == f"letter 1 submitted to @bob in bag {original}, acceptance unconfirmed\n"
 
 
 def test_parser_refusals_keep_an_already_selected_bag(isolated):

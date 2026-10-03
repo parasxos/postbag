@@ -272,7 +272,7 @@ def test_cli_send_reads_stdin_including_an_eof_line(joined, monkeypatch, capsys)
     monkeypatch.setattr("sys.stdin", io.StringIO("cat <<'EOF'\nhi\nEOF\n"))
     joined.main(["send", "codex", "-"])
     assert joined.records()[-1]["body"] == "cat <<'EOF'\nhi\nEOF"
-    assert capsys.readouterr().out == f"letter 1 delivered to @codex in bag {expected_bag_label()}\n"
+    assert capsys.readouterr().out == f"letter 1 submitted to @codex in bag {expected_bag_label()}, acceptance unconfirmed\n"
 
 
 def test_cli_version(capsys):
