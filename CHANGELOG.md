@@ -4,6 +4,17 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- CLI send receipts say "submitted" and state that acceptance is unconfirmed.
+  The ledger and MCP submission states are unchanged.
+- Ordinary and final letters carry guidance to act only within the human's
+  existing authorization. MCP instructions carry the same reminder. This is
+  model guidance, not an enforced permission boundary.
+- Documentation distinguishes submission from recipient acceptance, explains
+  per-send approval settings, and compares Postbag with A2A.
+
 ## [2.2.2] - 2026-10-02
 
 Documentation release. No runtime change beyond the version number.

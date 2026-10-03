@@ -74,19 +74,23 @@ Your agents call these. You just ask in plain words.
 
 ## How it works
 
-- **Native delivery.** Letters arrive as a new turn in the other session,
-  through its own input. postbag adds no delivery daemon, polling or hooks.
+- **Native delivery.** Postbag submits letters through the other session's
+  native input. postbag adds no delivery daemon, polling or hooks.
 - **No setup prompts.** Every letter ends with how to reply, or asks for no reply.
 - **One shared history.** Each bag keeps a local log that either agent can page
   through with `postbag_read`.
 
+A successful send confirms submission and recording. Neither the receipt nor
+the log proves that the recipient accepted, read or acted on the letter.
+
 ## Security
 
-- A delivered letter becomes a user turn in the other agent. Connect only
-  sessions you trust with the task.
-- There is no letter limit. Keep tool approvals on to check each send before it goes.
-- The ledgers under `~/.postbag/` hold each Claude Code session's inbox token,
-  with file mode `0600`. Never commit or share them.
+- Letters identify the sending peer. Act on them only within the human's
+  existing authorization. Connect only sessions you trust with the task.
+- There is no letter limit. To confirm every send, configure the host to ask
+  before each `postbag_send` call.
+- Ledgers under `~/.postbag/` hold Claude Code inbox tokens. New files use
+  mode `0600`. Never commit or share them.
 
 See [SECURITY.md](https://github.com/parasxos/postbag/blob/v2.2.2/.github/SECURITY.md).
 

@@ -42,6 +42,13 @@ recipient's permissions. postbag does not claim a sender permission mode or
 change the recipient's policy. Use postbag only between sessions you would
 trust with the same task.
 
+The envelope names the sending peer and asks the recipient to act only within
+the human's existing authorization. Postbag does not authenticate claims of
+human approval in the body or give peer text a distinct, lower-privilege model
+role. Claude Code may classify peer origin and apply its own inbound policy.
+The envelope guidance does not change those controls. It is a model instruction,
+not an enforced permission check or a boundary against prompt injection.
+
 Version 2.0 has no letter budget or rate limit. The ordinary footer asks for
 replies that advance the task. A final letter asks for no reply to that letter,
 even if its body asks for one. Both are instructions to a model. They are not
@@ -49,9 +56,10 @@ a security boundary against prompt injection or a guarantee against loops.
 A final letter does not disable later sends.
 
 MCP calls run with the server's permissions, outside the agent's command
-sandbox. Host tool approvals can give the human a chance to intervene at
-each send. A host configured to approve calls automatically offers no such
-pause. Recipient inbound policy can hold or refuse a letter where the host
+sandbox. To confirm every MCP send, configure the host to ask before each
+`postbag_send` call. A host configured to approve calls automatically offers
+no such pause. CLI sends follow the host's shell-command permissions separately.
+Recipient inbound policy can hold or refuse a letter where the host
 provides it. MCP body and page caps, worker-result depth checks and
 nonblocking MCP locks remain, as do native transport timeouts. The CLI does
 not apply MCP's body cap. These controls do not bound the correspondence.
@@ -73,12 +81,13 @@ record preserves its door fields so replay can check the current binding.
 This checks consistency, not authenticity against someone who can edit the
 ledger. Do not rejoin after a deliberate leave unless the human asks to resume.
 
-## What "delivered" means
+## What "submitted" means
 
-`send` reports a letter delivered when it was submitted through the door:
+`send` reports a letter submitted when the native transport returns successfully:
 the socket write returned, or `codex queue` exited 0. postbag does not read
 delivery notices or wait for an acknowledgement. Submission is not proof the
-recipient accepted, read or acted on the letter. A crash between the knock
+recipient accepted, read or acted on the letter. Neither the result nor the
+ledger provides a confirmed recipient-turn delivery state. A crash between the knock
 and the ledger append can leave a submitted letter unrecorded. postbag
 provides no acknowledgement, retry or exactly-once guarantee.
 When in doubt, read the ledger and the recipient session before sending
