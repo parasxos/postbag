@@ -4,6 +4,22 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-10-03
+
+Clarifies peer authorization and send outcomes. Each letter reminds its
+recipient to act within the human's existing authorization, and CLI receipts
+distinguish submission from acceptance. Existing bags need no migration.
+Reconnect MCP servers after upgrading to load the new instructions.
+
+### Changed
+- CLI send receipts say "submitted" and state that acceptance is unconfirmed.
+  The ledger and MCP submission states are unchanged.
+- Ordinary and final letters carry guidance to act only within the human's
+  existing authorization. MCP instructions carry the same reminder. This is
+  model guidance, not an enforced permission boundary.
+- Documentation distinguishes submission from recipient acceptance, explains
+  per-send approval settings, and compares Postbag with A2A.
+
 ## [2.2.2] - 2026-10-02
 
 Documentation release. No runtime change beyond the version number.
@@ -416,7 +432,8 @@ Four commits from "bridge" to "postbag" on the day the idea was born:
 the ledger became the only state, `open` became human-only, and every
 refusal learned to say stop.
 
-[Unreleased]: https://github.com/parasxos/postbag/compare/v2.2.2...HEAD
+[Unreleased]: https://github.com/parasxos/postbag/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/parasxos/postbag/releases/tag/v2.3.0
 [2.2.2]: https://github.com/parasxos/postbag/releases/tag/v2.2.2
 [2.2.1]: https://github.com/parasxos/postbag/releases/tag/v2.2.1
 [2.2.0]: https://github.com/parasxos/postbag/releases/tag/v2.2.0
