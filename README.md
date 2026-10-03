@@ -74,8 +74,8 @@ Your agents call these. You just ask in plain words.
 
 ## How it works
 
-- **Native delivery.** Postbag submits letters through the other session's
-  native input. postbag adds no delivery daemon, polling or hooks.
+- **Native delivery.** Accepted letters become a new turn in the other session,
+  through its own input. postbag adds no delivery daemon, polling or hooks.
 - **No setup prompts.** Every letter ends with how to reply, or asks for no reply.
 - **One shared history.** Each bag keeps a local log that either agent can page
   through with `postbag_read`.
@@ -85,8 +85,9 @@ the log proves that the recipient accepted, read or acted on the letter.
 
 ## Security
 
-- Letters identify the sending peer. Act on them only within the human's
-  existing authorization. Connect only sessions you trust with the task.
+- Each letter names its peer and asks the recipient to stay within the human's
+  existing authorization. This is model guidance, not a security boundary.
+  Connect only sessions you trust with the task.
 - There is no letter limit. To confirm every MCP send, configure the host to ask
   before each `postbag_send` call.
 - Ledgers under `~/.postbag/` hold Claude Code inbox tokens. New files use

@@ -6,10 +6,8 @@ the same ledger and native delivery as the CLI. Joining creates a missing
 bag. Postbag does not start agents, poll recipients, or retry letters.
 Version 2.0 removes letter budgets, exchanges and the `open` command.
 The 2.1 interface adds `postbag_leave` and the inventory's
-worker version field. The candidate has passed the package, fixture and
-native checks below.
-
-Historical checks describe their recorded versions.
+worker version field. Recorded package, fixture and native checks below
+identify the tested versions.
 
 ## Relation to A2A
 
