@@ -1,7 +1,7 @@
 <!-- mcp-name: io.github.parasxos/postbag -->
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/parasxos/postbag/v2.2.2/docs/assets/logo.png" width="96" height="96" alt="Postbag logo">
+<img src="https://raw.githubusercontent.com/parasxos/postbag/v2.3.0/docs/assets/logo.png" width="96" height="96" alt="Postbag logo">
 
 # postbag
 
@@ -14,11 +14,11 @@ windows.
 [![ci](https://github.com/parasxos/postbag/actions/workflows/ci.yml/badge.svg)](https://github.com/parasxos/postbag/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/postbag)](https://pypi.org/project/postbag/)
 [![postbag MCP server](https://glama.ai/mcp/servers/parasxos/postbag/badges/score.svg)](https://glama.ai/mcp/servers/parasxos/postbag)
-[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/parasxos/postbag/blob/v2.2.2/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/parasxos/postbag/blob/v2.3.0/LICENSE)
 
 </div>
 
-![A real recorded run, edited and sped up. Codex joins bag review. Claude Code joins and asks Codex to review the last commit, and the request arrives in Codex as letter 1. Codex reads the diff, runs a test showing a failing job reported as None, and sends two findings back as a final letter. Claude Code checks them against the diff and agrees.](https://raw.githubusercontent.com/parasxos/postbag/main/docs/assets/demo-live.gif)
+![A real recorded run, edited and sped up. Codex joins bag review. Claude Code joins and asks Codex to review the last commit, and the request arrives in Codex as letter 1. Codex reads the diff, runs a test showing a failing job reported as None, and sends two findings back as a final letter. Claude Code checks them against the diff and agrees.](https://raw.githubusercontent.com/parasxos/postbag/v2.3.0/docs/assets/demo-live.gif)
 
 ## Install
 
@@ -34,10 +34,10 @@ codex mcp add postbag -- "$(command -v postbag-mcp)"
 
 Start a new session in each app, then run `/mcp`. postbag should list five
 tools. For uvx and other setups, see
-[MCP setup](https://github.com/parasxos/postbag/blob/v2.2.2/docs/mcp.md).
+[MCP setup](https://github.com/parasxos/postbag/blob/v2.3.0/docs/mcp.md).
 
 Or ask your agent: *Install postbag using
-[llms-install.md](https://github.com/parasxos/postbag/blob/v2.2.2/llms-install.md).*
+[llms-install.md](https://github.com/parasxos/postbag/blob/v2.3.0/llms-install.md).*
 
 ## Quick start
 
@@ -93,10 +93,10 @@ the log proves that the recipient accepted, read or acted on the letter.
 - Ledgers under `~/.postbag/` hold Claude Code inbox tokens. New files use
   mode `0600`. Never commit or share them.
 
-See [SECURITY.md](https://github.com/parasxos/postbag/blob/v2.2.2/.github/SECURITY.md).
+See [SECURITY.md](https://github.com/parasxos/postbag/blob/v2.3.0/.github/SECURITY.md).
 
-[MCP setup](https://github.com/parasxos/postbag/blob/v2.2.2/docs/mcp.md) ·
-[Concept](https://github.com/parasxos/postbag/blob/v2.2.2/CONCEPT.md) ·
-[Changelog](https://github.com/parasxos/postbag/blob/v2.2.2/CHANGELOG.md) ·
-[Contributing](https://github.com/parasxos/postbag/blob/v2.2.2/.github/CONTRIBUTING.md) ·
-[MIT](https://github.com/parasxos/postbag/blob/v2.2.2/LICENSE)
+[MCP setup](https://github.com/parasxos/postbag/blob/v2.3.0/docs/mcp.md) ·
+[Concept](https://github.com/parasxos/postbag/blob/v2.3.0/CONCEPT.md) ·
+[Changelog](https://github.com/parasxos/postbag/blob/v2.3.0/CHANGELOG.md) ·
+[Contributing](https://github.com/parasxos/postbag/blob/v2.3.0/.github/CONTRIBUTING.md) ·
+[MIT](https://github.com/parasxos/postbag/blob/v2.3.0/LICENSE)
