@@ -933,7 +933,7 @@ def test_claude_socket_submission_uses_private_fake_receiver(wire):
         async def exercise():
             async with wire.session() as client:
                 result = await client.call_tool("postbag_send", {"to": "bob", "body": "private challenge", "final": True}, meta=meta())
-                assert checked(result)["submission_state"] == "submitted"
+                checked_send(result, final=True)
                 assert socket_path not in wire_text(result) and FAKE_TOKEN not in wire_text(result)
         try:
             asyncio.run(exercise())

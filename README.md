@@ -87,7 +87,7 @@ the log proves that the recipient accepted, read or acted on the letter.
 
 - Letters identify the sending peer. Act on them only within the human's
   existing authorization. Connect only sessions you trust with the task.
-- There is no letter limit. To confirm every send, configure the host to ask
+- There is no letter limit. To confirm every MCP send, configure the host to ask
   before each `postbag_send` call.
 - Ledgers under `~/.postbag/` hold Claude Code inbox tokens. New files use
   mode `0600`. Never commit or share them.
