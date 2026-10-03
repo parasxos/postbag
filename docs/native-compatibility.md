@@ -1,5 +1,62 @@
 # Native compatibility checks
 
+## 3 October 2026: installed 2.3.0 release candidate
+
+A clean wheel built independently from archive
+`472556001a861e091b04493aa2c8321420a3766a` passed the native gate on its first
+execution. Both fresh hosts used the installed `postbag mcp` launcher from
+one isolated venv. Package and runtime versions were `2.3.0`. Installed
+modules matched the archive and wheel and remained unchanged throughout.
+
+The run used macOS **27.0.1**, build **26A434**, Python **3.14.6** and MCP SDK
+**2.3.0**. Codex CLI **0.159.0-alpha.12.1** reported `gpt-6.1-sol`. Claude
+Code **2.1.288** reported `claude-fable-5-1`. The unwrapped native
+`codex queue` used default discovery in a private `CODEX_HOME` and reached
+a disposable persisted thread. No `--remote` override or queue wrapper was
+used. Personal daemon routing and native Linux delivery were not tested.
+
+| Check | Observed result |
+|---|---|
+| Ordinary delivery | Both sessions received the initial letter and reply, then a later ordinary exchange after rejoining. The two reply turns were created through the native queue, separate from direct harness prompts. |
+| Peer guidance | Both Codex incoming reply envelopes contained the new authorization reminder before their unchanged bodies. All five successful send receipts stated that acceptance and execution were unconfirmed. |
+| Final letter | After receipt and recipient turn completion, 30.1292 seconds passed with no recipient send attempt or ledger change. Both hosts stayed alive. |
+| Leave and refusal | MCP leave withdrew the recipient. The next send returned `refused` and `not_submitted`, included the departure time and preserved the ledger bytes. The recipient did not report receiving its body. |
+| Deliberate rejoin | A later explicit harness instruction caused rejoining, after which the ordinary round trip succeeded. |
+| Accounting | Ten model-authored calls produced three joins, one leave and five submitted letters. One of the six send attempts refused. Nine record numbers and five letter ordinals were contiguous. |
+| Cleanup | Both clients and the private server exited 0 without forced shutdown. Native endpoints closed and the private authentication alias was removed. |
+
+An independent audit checked 69 assertions against raw events, ledger records
+and candidate files. Claude's event stream did not expose its inbound envelope
+text. Its exact-body stdout receipt markers followed by completed peer-origin
+turns corroborated receipt. Those markers were harness instrumentation, not
+Postbag replies.
+The new guidance was checked as received text in Codex, not as an enforced
+authorization boundary or a test of model resistance to contrary instructions.
+The final-letter window describes this run, not general loop prevention or
+an isolated test of the footer. Leave did not test recall of queued letters.
+
+The command sandbox reported read-only access, disabled network access and
+`approvalPolicy: never`. Claude was launched with `--permission-mode manual`
+and reported `permissionMode: default`. Preauthorized fixture tools required
+no human prompt. `crossSessionInbound` was unset with empty Claude setting
+sources. Native own-child classification was unobserved. No personal
+configuration or installation changed. Claude used its existing login and
+could write its usual caches or telemetry.
+
+The prior 2.2.2 harness was recovered from its recorded source with an exact
+SHA256 match. The adaptation selected 2.3.0 and added the guidance and receipt
+checks above. Existing native delivery, final-window, leave, rejoin and
+cleanup checks were retained.
+
+Candidate provenance:
+
+```text
+wheel          d5067840bb710b9fccaa323790dda8de99f18589f613baf70f47c2f1fd1d621c
+postbag.py     2f5cbf04d0b6e05a308466c8e45857482050406f05257400931347d285152f5c
+postbag_mcp.py f35766d4053051203048f301bee2bc7f2b76fd1864c940f1add09c3390133f25
+harness        91d9d9b6ccd03ac65b315d31972d8cedb65bef9e6c712350ed9eb240081ee25d
+```
+
 ## 2 October 2026: installed 2.2.2 release candidate
 
 An independently built wheel from a clean archive of
