@@ -18,7 +18,7 @@ windows.
 
 </div>
 
-![Scripted demo in two panes, Claude Code and Codex. Both join bag review with postbag_join. Claude Code sends a review request with postbag_send, and it arrives in Codex as letter 1. Codex replies with three findings as letter 2, and Claude Code sends final letter 3. postbag_read reports 3 letters.](https://raw.githubusercontent.com/parasxos/postbag/v2.2.2/docs/assets/demo.gif)
+![A real recorded run, edited and sped up. Codex joins bag review. Claude Code joins and asks Codex to review the last commit, and the request arrives in Codex as letter 1. Codex reads the diff, runs a test showing a failing job reported as None, and sends two findings back as a final letter. Claude Code checks them against the diff and agrees.](https://raw.githubusercontent.com/parasxos/postbag/main/docs/assets/demo-live.gif)
 
 ## Install
 
