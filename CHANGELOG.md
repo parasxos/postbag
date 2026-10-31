@@ -4,6 +4,17 @@ All notable changes to postbag are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Recipient-owned, send-only service grants with explicit expiry and revocation.
+- `service-grant`, `service-check` and structured `service-send --json` receipts.
+- Private grant sidecars preserve compatibility with existing peer ledgers.
+
+### Fixed
+- Discover Codex in common installation directories when service managers omit
+  package-manager directories from PATH.
+
 ## [2.3.0] - 2026-10-03
 
 Clarifies peer authorization and send outcomes. Each letter reminds its

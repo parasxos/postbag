@@ -100,3 +100,37 @@ See [SECURITY.md](https://github.com/parasxos/postbag/blob/v2.3.0/.github/SECURI
 [Changelog](https://github.com/parasxos/postbag/blob/v2.3.0/CHANGELOG.md) ·
 [Contributing](https://github.com/parasxos/postbag/blob/v2.3.0/.github/CONTRIBUTING.md) ·
 [MIT](https://github.com/parasxos/postbag/blob/v2.3.0/LICENSE)
+## Service notifications
+
+A receiving peer can grant a local service permission to send it notifications.
+The service is send-only: it does not register a Claude/Codex door, borrow a peer
+identity, or receive replies.
+
+From the receiving session, after joining a bag:
+
+```sh
+postbag --bag work service-grant whatsapp --ttl 1800
+```
+
+Keep the returned token private. It is scoped to the service, bag, and recipient's
+current registration. A rejoin invalidates the grant. A new grant rotates its
+token; `--ttl 0` revokes it. The default lifetime is one hour, maximum seven days.
+Grants are hashed in an owner-private sidecar next to the ledger. The peer ledger
+format is unchanged, so existing readers can continue to read it.
+
+The service supplies the token through its environment, not a command argument:
+
+```sh
+postbag --bag work service-check whatsapp my-agent
+postbag --bag work service-send whatsapp my-agent - --json
+```
+
+`POSTBAG_SERVICE_TOKEN` supplies the credential. `service-send` reads the body from
+stdin when it is `-`; `--json` returns structured submission metadata even on a
+refusal, with a nonzero exit status on failure. Services must distinguish
+`not_submitted`, `unknown`, and `submitted`; none proves recipient processing.
+Service letters are visibly marked and final, with no reply command.
+
+Notifications use the same user-message entry point as peer letters. Prefer fixed
+pointer notices to external content: the agent should read actual data through
+the source's tool. A service notice does not grant permission for actions.

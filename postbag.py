@@ -9,23 +9,28 @@
     postbag mcp                   # start the optional MCP server on stdio, the same as postbag-mcp
 """
 import argparse
+import hashlib
+import hmac
+import io
 import errno
 import fcntl
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import unicodedata
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-__version__ = "2.3.0"
+__version__ = "2.4.0.dev0"
 
 PEERS = {"claude", "codex"}  # supported vendors; registered peer names come from the ledger
 NAME = re.compile(r"[a-z][a-z0-9-]{0,15}")
@@ -99,7 +104,14 @@ def codex_path():
         return os.environ["POSTBAG_CODEX"]
     if os.access(MACOS_CODEX, os.X_OK):
         return MACOS_CODEX
-    return shutil.which("codex") or "codex"
+    found = shutil.which("codex")
+    if found:
+        return found
+    # launchd and other service managers commonly omit package-manager bin dirs.
+    for candidate in ("/opt/homebrew/bin/codex", "/usr/local/bin/codex", str(Path.home() / ".local/bin/codex")):
+        if os.access(candidate, os.X_OK):
+            return candidate
+    return "codex"
 
 
 class Refusal(SystemExit):
@@ -545,7 +557,8 @@ def envelope(rec, state):
     """The submitted text, as CONCEPT.md shows it: heading, roster when the bag holds more
     than two names, the guidance line, body, then how to answer. A final letter ends with
     FINAL and no command. The guidance is text a model reads, not a native role or boundary."""
-    text = f"Letter {state.letters + 1} from @{rec['from']} to @{rec['to']} via postbag (bag {bag().label})."
+    origin = "Service notice" if rec.get("service") else "Letter"
+    text = f"{origin} {state.letters + 1} from @{rec['from']} to @{rec['to']} via postbag (bag {bag().label})."
     if len(state.peers) > 2:
         text += "\nRegistered names in this bag: " + ", ".join(f"@{p}" for p in sorted(state.peers)) + "."
     text += f"\n{GUIDANCE}\n\n{rec['body']}\n\n"
@@ -585,7 +598,93 @@ def join(source, peer=None, *, wait=True):
             "took": {"vendor": vendor(taken), "at": display_stamp(taken["at"])} if taken else None}
 
 
-def send(to, body, *, final=False, wait=True):
+def service_grants():
+    """Grants live outside the peer ledger so older clients can keep reading letters."""
+    path = ledger_path().with_suffix(".services.json")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return {}
+    with os.fdopen(fd, encoding="utf-8") as f:
+        info = os.fstat(f.fileno())
+        if not stat.S_ISREG(info.st_mode) or exposed(stat.S_IMODE(info.st_mode)) or info.st_uid != os.getuid():
+            fail("service registry must be an owner-private regular file")
+        try:
+            value = json.load(f)
+        except ValueError:
+            fail("service registry is invalid")
+        if not isinstance(value, dict):
+            fail("service registry is invalid")
+        return value
+
+
+def write_service_grants(value):
+    path = ledger_path().with_suffix(".services.json")
+    fd, temporary = tempfile.mkstemp(prefix=".postbag-services-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(value, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def grant_service(service, *, ttl=3600):
+    """The receiving peer grants one service permission to notify its current door."""
+    service = name(service)
+    if type(ttl) is not int or not 0 <= ttl <= 604800:
+        fail("service lifetime must be 0–604800 seconds", error_code="invalid_input")
+    token = secrets.token_urlsafe(32)
+    with ledger() as _:
+        state = Snapshot(records())
+        recipient = state.sender()
+        if service in PEERS or service == recipient or service in state.peers:
+            fail("service name must not name a registered peer", error_code="invalid_input")
+        target = state.target(recipient)
+        rec = dict(service=service, to=recipient,
+                     target_join=target["n"], target_hash=hashlib.sha256(json.dumps(identity(target)).encode()).hexdigest(),
+                     expires_at=(datetime.now().astimezone() + timedelta(seconds=ttl)).isoformat(),
+                     token_hash=hashlib.sha256(token.encode()).hexdigest())
+        grants = service_grants()
+        now = datetime.now().astimezone()
+        grants = {key: value for key, value in grants.items()
+                  if isinstance(value, dict) and isinstance(value.get("expires_at"), str)
+                  and datetime.fromisoformat(value["expires_at"]) > now}
+        grants[f"{service}:{recipient}"] = rec
+        write_service_grants(grants)
+    receipt = {"bag": bag().label, "peer": recipient, "service": service,
+               "token": token, "expires_at": rec["expires_at"]}
+    print(json.dumps(receipt))
+    return receipt
+
+
+def service_sender(state, service, recipient, token):
+    service = name(service)
+    target = state.target(recipient)
+    grant = service_grants().get(f"{service}:{recipient}")
+    if (service in state.peers or not grant or not isinstance(token, str) or not token
+            or not hmac.compare_digest(grant["token_hash"], hashlib.sha256(token.encode()).hexdigest())
+            or grant["target_join"] != target["n"]
+            or grant["target_hash"] != hashlib.sha256(json.dumps(identity(target)).encode()).hexdigest()
+            or datetime.fromisoformat(grant["expires_at"]) <= datetime.now().astimezone()):
+        fail("service grant missing, expired, revoked or bound to an earlier recipient registration",
+             error_code="service_not_permitted")
+    return service
+
+
+def check_service(service, recipient, token):
+    recipient = name(recipient, mention=True)
+    with ledger() as _:
+        state = Snapshot(records())
+        service_sender(state, service, recipient, token)
+        grant = service_grants()[f"{service}:{recipient}"]
+    print(json.dumps({"ok": True, "bag": bag().label, "peer": recipient, "expires_at": grant["expires_at"]}))
+
+
+def send(to, body, *, final=False, wait=True, service=None, service_token=None):
     """Submit once; return receipt metadata without asserting recipient acceptance."""
     to = name(to, mention=True)
     if type(final) is not bool:
@@ -600,11 +699,14 @@ def send(to, body, *, final=False, wait=True):
     try:
         with ledger(wait=wait) as write:
             state = Snapshot(records())
-            sender = state.sender()
+            sender = (service_sender(state, service, to, service_token)
+                      if service is not None else state.sender())
             if sender == to:
                 fail(f"@{to} is your own name")
             target = state.target(to)
             fields = {"from": sender, "to": to, "body": body}
+            if service is not None:
+                fields["service"] = True
             if final:
                 fields["final"] = True  # the record carries final only when it is true
             rec = record("letter", **fields)
@@ -1009,6 +1111,17 @@ def cli(argv):
     b.add_argument("--resume", action="store_true", help="show Claude resume commands for conversations recorded at join")
     sub.add_parser("leave", help="withdraw this session's door from the bag until it joins again",
                    description="Inside a session: withdraw its registered name from the bag. The history stays.")
+    g = sub.add_parser("service-grant", help="grant a service send-only access to your registered session")
+    g.add_argument("name")
+    g.add_argument("--ttl", type=int, default=3600)
+    for verb in ("service-send", "service-check"):
+        service = sub.add_parser(verb)
+        service.add_argument("name")
+        service.add_argument("to")
+        service.add_argument("--token-env", default="POSTBAG_SERVICE_TOKEN")
+        if verb == "service-send":
+            service.add_argument("body", help='notification text, or "-" for stdin')
+            service.add_argument("--json", action="store_true", help="return a structured submission receipt")
     sub.add_parser("mcp", help="start the optional MCP server on stdio, the same as postbag-mcp",
                    description="Start the MCP server that postbag-mcp starts. It takes no bag and no arguments. "
                                "Hosts that run a package by its own name, such as uvx, use this entry.")
@@ -1041,7 +1154,24 @@ def serve_mcp(a):
 
 
 def run(a):
-    if a.verb == "join":
+    if a.verb == "service-grant":
+        grant_service(a.name, ttl=a.ttl)
+    elif a.verb == "service-check":
+        check_service(a.name, a.to, os.environ.get(a.token_env))
+    elif a.verb == "service-send":
+        body = sys.stdin.read().rstrip("\n") if a.body == "-" else a.body
+        if not a.json:
+            send(a.to, body, final=True, service=a.name, service_token=os.environ.get(a.token_env))
+        else:
+            try:
+                with redirect_stdout(io.StringIO()):
+                    receipt = send(a.to, body, final=True, service=a.name, service_token=os.environ.get(a.token_env))
+                print(json.dumps({"ok": True, **receipt}))
+            except Refusal as error:
+                print(json.dumps({"ok": False, "error_code": error.error_code,
+                                  "submission_state": error.submission_state}))
+                raise SystemExit(2)
+    elif a.verb == "join":
         join(a.vendor, a.name)
     elif a.verb == "send":
         send(a.to, sys.stdin.read().rstrip("\n") if a.body == "-" else a.body, final=a.final)
